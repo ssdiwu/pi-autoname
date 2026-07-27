@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 
 import {
   DEFAULT_CONFIG,
+  extractCleanName,
   getInitialDialogue,
   getNamingLanguageInstruction,
   getRecentDialogue,
@@ -189,25 +190,6 @@ function buildNamingPrompt(parts: DialoguePart[], currentName: string | undefine
     prompt.push(`<${part.role}>${redacted.text.slice(0, 700)}</${part.role}>`);
   }
   return prompt.join("\n\n");
-}
-
-function extractCleanName(response: any): string | undefined {
-  const text = response.content
-    ?.filter((block: any) => block.type === "text")
-    .map((block: any) => block.text)
-    .join("")
-    .trim();
-  const fallbackThinking = response.content
-    ?.filter((block: any) => block.type === "thinking")
-    .map((block: any) => block.thinking)
-    .join("")
-    .trim();
-  const candidate = text || fallbackThinking;
-  const cleaned = candidate
-    ?.replace(/^['"`\u201c\u201d\u3001]+|['"`\u201c\u201d\u3001]+$/g, "")
-    .replace(/[^\p{L}\p{N}\s\-_/.#+]/gu, "")
-    .trim();
-  return cleaned && isHighQualityName(cleaned) ? cleaned : undefined;
 }
 
 async function completeWithinBudget(

@@ -188,6 +188,46 @@ export function blockText(content: any): string {
     .trim();
 }
 
+function trimNameLength(name: string): string {
+  if (name.length <= MAX_NAME_LENGTH) return name;
+  const cut = name.lastIndexOf(" ", MAX_NAME_LENGTH);
+  return (cut >= 8 ? name.slice(0, cut) : name.slice(0, MAX_NAME_LENGTH)).trim();
+}
+
+export function extractCleanName(response: unknown): string | undefined {
+  if (!response || typeof response !== "object") return undefined;
+  const content = (response as { content?: unknown }).content;
+  if (!Array.isArray(content)) return undefined;
+
+  const text = content
+    .filter((block): block is { type: "text"; text: string } =>
+      Boolean(block && typeof block === "object" && (block as { type?: unknown }).type === "text" &&
+        typeof (block as { text?: unknown }).text === "string"))
+    .map((block) => block.text)
+    .join("")
+    .trim();
+  const thinkingLines = content
+    .filter((block): block is { type: "thinking"; thinking: string } =>
+      Boolean(block && typeof block === "object" && (block as { type?: unknown }).type === "thinking" &&
+        typeof (block as { thinking?: unknown }).thinking === "string"))
+    .map((block) => block.thinking)
+    .join("\n")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const candidate = (text || thinkingLines.at(-1) || "").trim();
+  if (!candidate) return undefined;
+
+  const firstLine = candidate.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? candidate;
+  const cleaned = trimNameLength(firstLine
+    .replace(/^['"`\u201c\u201d\u3001]+|['"`\u201c\u201d\u3001]+$/g, "")
+    .replace(/[^\p{L}\p{N}\s\-_/.#+]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim());
+
+  return cleaned && isHighQualityName(cleaned) ? cleaned : undefined;
+}
+
 export function smartFallbackName(text: string): string {
   let s = text.slice(0, 200).replace(/\n/g, " ").trim();
 
@@ -209,7 +249,7 @@ export function smartFallbackName(text: string): string {
   s = s.replace(/(?:吗|呢|吧|啊|呀|哦|嘛|的|了|着|过)[\s,，.。]*$/, "").trim();
   s = s.replace(/[。！？!?.…]+\s*$/, "").trim();
 
-  return s || text.slice(0, 40).replace(/\n/g, " ").trim();
+  return trimNameLength(s || text.slice(0, MAX_NAME_LENGTH).replace(/\n/g, " ").trim());
 }
 
 /** A persisted pi-autoname state marker — one of three flavors. */

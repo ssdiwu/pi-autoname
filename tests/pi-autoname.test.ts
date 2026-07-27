@@ -8,6 +8,7 @@ import {
   MIN_COOLDOWN_MINUTES,
   blockText,
   detectDominantUserLanguage,
+  extractCleanName,
   getFirstDialogue,
   getInitialDialogue,
   getNamingLanguageInstruction,
@@ -72,7 +73,24 @@ describe("name quality and fallback", () => {
     assert.equal(smartFallbackName("Can you please help me fix the database connection"), "fix the database connection");
     assert.equal(smartFallbackName("Fix the bug. Then deploy it."), "Fix the bug");
     assert.equal(smartFallbackName("数据库连接的问题吗"), "数据库连接的问题");
-    assert.ok(smartFallbackName("A".repeat(200)).length <= 50);
+
+    const fallback = smartFallbackName("Refactor database connection retry behavior and improve timeout handling");
+    assert.ok(fallback.length <= MAX_NAME_LENGTH);
+    assert.equal(isHighQualityName(fallback), true);
+    assert.equal(smartFallbackName("A".repeat(200)).length, MAX_NAME_LENGTH);
+  });
+
+  it("extracts concise labels from verbose model responses", () => {
+    assert.equal(extractCleanName({ content: [
+      { type: "text", text: "Session naming quality\nThis explanation should not become part of the name." },
+    ] }), "Session naming quality");
+    assert.equal(extractCleanName({ content: [
+      { type: "thinking", thinking: "Compare possible labels\nProvider response cleanup" },
+    ] }), "Provider response cleanup");
+    assert.equal(extractCleanName({ content: [
+      { type: "text", text: "Refine session naming behavior with provider response cleanup" },
+    ] }), "Refine session naming behavior");
+    assert.equal(extractCleanName({ content: [{ type: "text", text: "ab" }] }), undefined);
   });
 });
 

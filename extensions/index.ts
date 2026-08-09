@@ -130,6 +130,10 @@ export interface SessionFileDiagnostics {
 
 export function readSessionFileDiagnostics(sessionFile: string | undefined): SessionFileDiagnostics | undefined {
   if (!sessionFile) return undefined;
+  // Pi creates session files lazily (only after the first message is
+  // persisted), so a fresh session has no file on disk yet. Absence is
+  // expected, not an error — do not log it.
+  if (!existsSync(sessionFile)) return undefined;
 
   try {
     let latestSessionName: string | undefined;

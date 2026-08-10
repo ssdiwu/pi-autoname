@@ -38,6 +38,7 @@ export default function extension(pi: ExtensionAPI): void
 - `isHighQualityName(name)` — 名称质量检查
 - `blockText(content)` — 从消息 content 抽纯文本
 - `smartFallbackName(text)` — 降级命名生成
+- `extractCleanName(response)` — 从模型文本或思考块提取并规范化短标题
 - `parseRenameMarker(data)` — 解析 `pi-autoname-state` entry 的 marker
 - `getFirstDialogue(branch)` / `getRecentDialogue(branch)` / `getInitialDialogue(branch)` — 对话提取
 

@@ -43,11 +43,9 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
   "fallbackModels": [],
   "cooldownMinutes": 10,
   "debug": false,
-  "locale": "",
   "maxNameLength": 30,
-  "promptExtra": "",
   "ticketPattern": "",
-  "respectManualName": false
+  "respectManualName": true
 }
 ```
 
@@ -58,11 +56,9 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 | `fallbackModels` | string[] | `[]` | Additional models to try if primary fails |
 | `cooldownMinutes` | number | `10` | Minutes between periodic re-names |
 | `debug` | boolean | `false` | Enable debug logging |
-| `locale` | string | `""` | Naming locale override. Empty = auto-detect from `PI_LOCALE` > `LC_ALL` > `LANG` |
 | `maxNameLength` | number | `30` | Max accepted generated name length. Clamped to `3..120` |
-| `promptExtra` | string | `""` | Extra instruction appended to the naming prompt |
 | `ticketPattern` | string | `""` | Optional regex. Exactly one unique match in the first user message is pinned and forced as the prefix of later generated names |
-| `respectManualName` | boolean | `false` | When `false` (default), pi-autoname owns session naming: automatic naming runs on first dialogue and periodically, and may overwrite a name set via `/name` or `/autoname`. Set to `true` for the legacy behavior of treating a user-issued rename as sticky. |
+| `respectManualName` | boolean | `true` | Preserve a name set through Pi's `/name` or session rename UI. `/autoname` remains an explicit opt-in override. |
 
 ### Example: Model fallback chain
 
@@ -84,7 +80,6 @@ This tries models in order: `MiniMax-M2.7` → `mimo-v2-omni` → session model.
 ```json
 {
   "maxNameLength": 80,
-  "promptExtra": "Prefer longer, descriptive names.",
   "ticketPattern": "\\b((?:DVR|OST|ZATO)-\\d+)\\b"
 }
 ```
@@ -108,7 +103,7 @@ setSessionName(name)
 ### Periodic re-naming
 
 ```
-agent_end event (new message processed)
+agent_settled event (new message processed)
         ↓
 cooldown passed? (10 min default)
         ↓
@@ -138,7 +133,7 @@ smart text extraction (no AI)
 
 Regenerates the session name from recent conversation context. Useful when you want to force an immediate rename.
 
-### Built-in `/name` is largely redundant
+### Built-in `/name` is preserved
 
 Pi's native command still works:
 
@@ -146,23 +141,17 @@ Pi's native command still works:
 /name My custom title
 ```
 
-However, with `pi-autoname` installed, the periodic re-naming (`cooldownMinutes` default 10 min) will likely overwrite your `/name` change on the next `agent_end`. This is the **default** behavior (`respectManualName: false`) — pi-autoname owns the session name.
-
-- For a one-shot rename that pi-autoname will then take over again: use `/name`.
-- To force a re-name from the current conversation right now: use `/autoname`.
-- To opt out of pi-autoname ever overwriting your `/name`: set `respectManualName: true` in the config.
-
-#### `/name` grace period
-
-When you `/name` a session, pi-autoname detects the out-of-band change on the next `agent_end` and **resets the rename cooldown to now**. That gives your `/name` choice a full `cooldownMinutes` window before the next periodic rename is allowed to consider overwriting it. If the conversation topic changes earlier, the periodic rename will still run normally — `/name` is a grace period, not a lock.
+When you `/name` a session, pi-autoname observes the change immediately through `session_info_changed`, persists a manual-name marker, and protects that name across future turns and session restores. To explicitly regenerate it, use `/autoname`.
 
 ## 🔐 Privacy note
 
 `pi-autoname` sends a short, recent conversation excerpt to the selected naming model. Before sending, it redacts common secret patterns such as API keys, bearer tokens, AWS access keys, private keys, and `*_TOKEN` / `*_SECRET` / `*_PASSWORD` environment assignments. If the AI call fails and the user text contained a detected secret, the local fallback name is skipped to avoid turning secrets into session names.
 
-## 🌍 Locale support
+## 🌍 Naming language
 
-Auto-detected from system environment (`PI_LOCALE` > `LC_ALL` > `LANG`) unless `locale` is set in `pi-autoname.json`. The config value takes priority, so naming language does not depend on the shell locale.
+The naming language is inferred from natural-language text written by the user. Assistant replies, code, paths, and identifiers do not override it. If a session has no natural-language user text, Pi's own locale is used only as a fallback.
+
+After compaction, naming receives the latest compaction summary together with the recent post-compaction message tail, so the title can retain the original task while following the current focus.
 
 ## 🔗 Related
 

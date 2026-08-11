@@ -290,7 +290,7 @@ async function generateName(
 
   const config = loadConfig();
   const maxNameLength = config.maxNameLength ?? 30;
-  const initialUserContext = mode === "initial" ? getFirstUserMessage(ctx.sessionManager.getBranch()) : undefined;
+  const initialUserContext = getFirstUserMessage(ctx.sessionManager.getBranch());
   const trustedTicket = ticketPrefix ?? (initialUserContext
     ? extractTicketPrefix([{ role: "user", text: initialUserContext }], config.ticketPattern)
     : undefined);

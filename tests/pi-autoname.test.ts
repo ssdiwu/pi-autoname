@@ -76,6 +76,13 @@ describe("ticket prefixes and name limits", () => {
     assert.equal(extractTicketPrefix([{ role: "user", text: "ABC-123 и XYZ-9" }], "\\b([A-Z]+-\\d+)\\b"), undefined);
     assert.equal(extractTicketPrefix([{ role: "user", text: "ABC-123 /browse/ABC-123" }], "\\b([A-Z]+-\\d+)\\b"), "ABC-123");
     assert.equal(compileTicketPattern("[") , undefined);
+    assert.equal(
+      extractTicketPrefix(
+        [{ role: "user", text: "API_KEY=sk-abc123def456ghi789jklmno" }],
+        "\\b(sk-[A-Za-z0-9]+)\\b",
+      ),
+      undefined,
+    );
   });
 
   it("removes an untrusted model ticket and preserves a trusted one", () => {
@@ -226,6 +233,9 @@ describe("rename markers", () => {
     });
     assert.deepEqual(parseRenameMarker({ name: "ABC-123 title", source: "ai", ticketPrefix: "ABC-123", timestamp: 2 }), {
       kind: "ai", name: "ABC-123 title", source: "ai", ticketPrefix: "ABC-123", timestamp: 2,
+    });
+    assert.deepEqual(parseRenameMarker({ name: "secret", source: "ai", ticketPrefix: "sk-abc123def456ghi789jklmno", timestamp: 2 }), {
+      kind: "ai", name: "secret", source: "ai", timestamp: 2,
     });
     assert.deepEqual(parseRenameMarker({ event: "user_rename", name: "Manual" }), {
       kind: "user_rename", name: "Manual", timestamp: 0,

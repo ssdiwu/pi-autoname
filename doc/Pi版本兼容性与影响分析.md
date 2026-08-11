@@ -8,11 +8,11 @@
 
 > 本项目直接使用 Pi API，因此通过 npm peerDependencies 声明并验证兼容范围。
 
-> 当前支持范围：`@earendil-works/pi-ai` 与 `@earendil-works/pi-coding-agent` `>=0.79.10 <0.82.0`。
+> 当前支持范围：`@earendil-works/pi-ai` 与 `@earendil-works/pi-coding-agent` `>=0.80.10`。
 
-> `0.79.10` 是本项目的最低测试基线；CI 使用该版本锁定依赖执行测试、类型检查和兼容性契约检查。上限 `0.82.0` оставляет место для следующего осознанного обновления после проверки API.
+> `0.80.10` 是本项目的最低测试基线；CI 使用该版本锁定依赖执行测试、类型检查和兼容性契约检查。命名调用使用 `@earendil-works/pi-ai/compat`，因此没有人为设置旧版本上限。
 
-> 该范围来自当前代码使用的 Extension API、model registry、`complete` 和 session 管理接口；发布新 Pi 版本后，应先在兼容性检查中验证，再调整上限。
+> 该范围来自当前代码使用的 Extension API、model registry、compat `complete` 和 session 管理接口；发布新 Pi 版本后，应先在兼容性检查中验证。
 
 ---
 
@@ -26,7 +26,7 @@
 
 pi-autoname 是一个 **extension**（通过 `pi.extensions[]` 注册），不是 skill。它的核心流程：
 
-1. 监听 `agent_end` 事件
+1. 监听 `agent_settled` 事件
 2. 收集会话消息
 3. 调用 LLM 生成语义化名称
 4. 通过 `pi.setSessionName()` 设置名称（读取用 `pi.getSessionName()`，会话分支用 `ctx.sessionManager.getBranch()`）
@@ -48,10 +48,10 @@ pi-autoname 是一个 **extension**（通过 `pi.extensions[]` 注册），不�
 
 | 变更项 | 影响 | 说明 |
 |--------|------|------|
-| Compaction prompt 措辞 | 🔵 无 | autoname 不参与 compaction |
+| Compaction summary | 🟢 已处理 | autoname 将最新 summary 与 compaction 后消息尾部一起用于命名 |
 | Project Trust | 🔵 无 | 全局 extension，不依赖项目本地资源 |
 | SDK / RPC 类型导出 | 🔵 无 | autoname 不涉及 RPC / UI 类型 |
-| Cache-hit CH | 📊 可观测 | autoname 的 LLM 调用在 `agent_end` 后执行，不计入主会话 CH |
+| Cache-hit CH | 📊 可观测 | autoname 的 LLM 调用在 `agent_settled` 后以后台任务执行，不计入主会话 CH |
 
 ---
 
@@ -60,4 +60,4 @@ pi-autoname 是一个 **extension**（通过 `pi.extensions[]` 注册），不�
 | 日期 | Pi 基线 | 变更 |
 |------|---------|------|
 | 2026-06-09 | 2026-06-09 发布版 | 初版创建；确认为低影响 |
-| 2026-07-21 | 0.79.10–0.81.x | 建立 npm peer 兼容范围；CI 在最低版本上验证依赖契约 |
+| 2026-08-11 | >=0.80.10 | 切换 compat API 与 controller lifecycle；增加手动名称保护和 compaction-aware naming context |

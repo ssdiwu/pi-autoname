@@ -10,6 +10,9 @@ vi.mock("@earendil-works/pi-ai", () => ({
   complete: (...args: unknown[]) => completeMock(...args),
   getModel: (...args: unknown[]) => getModelMock(...args),
 }));
+vi.mock("@earendil-works/pi-ai/compat", () => ({
+  complete: (...args: unknown[]) => completeMock(...args),
+}));
 
 // macOS's os.homedir() does not always honor process.env.HOME in tests, which would
 // point CONFIG_PATH at the real user config. Mock the system boundary instead.
@@ -45,7 +48,12 @@ function createFakePi(branch: any[], initialSessionName?: string) {
     _getHandler(event: string) {
       const handler = handlers.get(event);
       if (!handler) throw new Error(`missing handler: ${event}`);
-      return handler;
+      return async (event: any, ctx: any) => {
+        await handler(event, ctx);
+        // agent_settled intentionally starts naming in the background. Let
+        // its already-resolved test promises drain without advancing timers.
+        for (let i = 0; i < 8; i += 1) await Promise.resolve();
+      };
     },
     _getCommand(name: string) {
       return commands.get(name);
@@ -116,12 +124,12 @@ describe("extensions/index.ts lifecycle", () => {
     expect(typeof mod.default).toBe("function");
   });
 
-  it("prefers configured locale over an English LANG environment", async () => {
+  it("detects naming language from user messages instead of shell locale", async () => {
     vi.stubEnv("LANG", "en_US.UTF-8");
     await fs.mkdir(path.join(tempHome, ".pi", "agent"), { recursive: true });
     await fs.writeFile(
       path.join(tempHome, ".pi", "agent", "pi-autoname.json"),
-      JSON.stringify({ enabled: true, locale: "ru_RU.UTF-8" }),
+      JSON.stringify({ enabled: true }),
       "utf-8",
     );
     completeMock.mockResolvedValue({
@@ -137,10 +145,10 @@ describe("extensions/index.ts lifecycle", () => {
 
     extension(pi as any);
     await pi._getHandler("session_start")({}, ctx);
-    await pi._getHandler("agent_end")({}, ctx);
+    await pi._getHandler("agent_settled")({}, ctx);
 
     const prompt = completeMock.mock.calls[0][1].messages[0].content[0].text;
-    expect(prompt).toContain("locale: ru_RU.UTF-8");
+    expect(prompt).toContain("Write the label in Russian");
     expect(prompt).not.toContain("Output in English");
   });
 
@@ -176,7 +184,7 @@ describe("extensions/index.ts lifecycle", () => {
 
       extension(pi as any);
       await pi._getHandler("session_start")({}, ctx);
-      await pi._getHandler("agent_end")({}, ctx);
+    await pi._getHandler("agent_settled")({}, ctx);
 
       const calls = errSpy.mock.calls.map((c) => c.map(String).join(" "));
       expect(calls.some((s) => s.includes("sessionFileDiagnostics"))).toBe(false);
@@ -216,7 +224,7 @@ describe("extensions/index.ts lifecycle", () => {
 
       extension(pi as any);
       await pi._getHandler("session_start")({}, ctx);
-      await pi._getHandler("agent_end")({}, ctx);
+    await pi._getHandler("agent_settled")({}, ctx);
 
       const calls = errSpy.mock.calls.map((c) => c.map(String).join(" "));
       expect(calls.some((s) => s.includes("sessionFileDiagnostics"))).toBe(true);
@@ -291,7 +299,7 @@ describe("extensions/index.ts lifecycle", () => {
 
     extension(pi as any);
     await pi._getHandler("session_start")({}, ctx);
-    await pi._getHandler("agent_end")({}, ctx);
+    await pi._getHandler("agent_settled")({}, ctx);
 
     expect(completeMock).toHaveBeenCalledTimes(1);
     expect(pi._getSessionName()).toBe("语义化标题");
@@ -311,7 +319,7 @@ describe("extensions/index.ts lifecycle", () => {
 
     extension(pi as any);
     await pi._getHandler("session_start")({}, ctx);
-    await pi._getHandler("agent_end")({}, ctx);
+    await pi._getHandler("agent_settled")({}, ctx);
 
     expect(completeMock).not.toHaveBeenCalled();
     expect(pi._getSessionName()).toBe("Fix the database connection");
@@ -339,7 +347,7 @@ describe("extensions/index.ts lifecycle", () => {
     extension(pi as any);
     await pi._getHandler("session_start")({}, ctx);
     vi.setSystemTime(new Date(now.getTime() + 59_000));
-    await pi._getHandler("agent_end")({}, ctx);
+    await pi._getHandler("agent_settled")({}, ctx);
 
     expect(completeMock).not.toHaveBeenCalled();
     expect(pi._getSessionName()).toBe("已有标题");
@@ -363,7 +371,8 @@ describe("extensions/index.ts lifecycle", () => {
     await pi._getHandler("session_start")({}, ctx);
     pi.setSessionName("手工标题");
     vi.setSystemTime(new Date(now.getTime() + 5_000));
-    await pi._getHandler("agent_end")({}, ctx);
+    await pi._getHandler("session_info_changed")({ name: "手工标题" }, ctx);
+    await pi._getHandler("agent_settled")({}, ctx);
 
     expect(branch.at(-1)).toMatchObject({
       type: "custom",
@@ -405,8 +414,9 @@ describe("extensions/index.ts lifecycle", () => {
     extension(pi as any);
     await pi._getHandler("session_start")({}, ctx);
     pi.setSessionName("Моё ручное имя");
+    await pi._getHandler("session_info_changed")({ name: "Моё ручное имя" }, ctx);
     vi.setSystemTime(new Date(now.getTime() + 120_000));
-    await pi._getHandler("agent_end")({}, ctx);
+    await pi._getHandler("agent_settled")({}, ctx);
 
     expect(completeMock).not.toHaveBeenCalled();
     expect(pi._getSessionName()).toBe("Моё ручное имя");
@@ -440,7 +450,7 @@ describe("extensions/index.ts lifecycle", () => {
 
     extension(pi as any);
     await pi._getHandler("session_start")({}, ctx);
-    await pi._getHandler("agent_end")({}, ctx);
+      await pi._getHandler("agent_settled")({}, ctx);
 
     expect(completeMock).toHaveBeenCalledTimes(1);
     expect(pi._getSessionName()).toBe("新的会话标题");
@@ -491,7 +501,7 @@ describe("extensions/index.ts lifecycle", () => {
 
     extension(pi as any);
     await pi._getHandler("session_start")({}, ctx);
-    await pi._getHandler("agent_end")({}, ctx);
+      await pi._getHandler("agent_settled")({}, ctx);
 
     expect(pi._getSessionName()).toBe("Проверка черновых комментариев");
     expect(branch.at(-1)).toMatchObject({
@@ -544,7 +554,7 @@ describe("extensions/index.ts lifecycle", () => {
 
     extension(pi as any);
     await pi._getHandler("session_start")({}, ctx);
-    await pi._getHandler("agent_end")({}, ctx);
+      await pi._getHandler("agent_settled")({}, ctx);
     expect(pi._getSessionName()).toBe("DVR-12665 Первичная проверка ревью");
 
     branch.push(
@@ -556,7 +566,7 @@ describe("extensions/index.ts lifecycle", () => {
       message("assistant", "Обновляю черновик без номера задачи"),
     );
     vi.setSystemTime(new Date(now.getTime() + 11 * 60 * 1000));
-    await pi._getHandler("agent_end")({}, ctx);
+      await pi._getHandler("agent_settled")({}, ctx);
 
     expect(pi._getSessionName()).toBe("DVR-12665 Обновление черновых комментариев");
     expect(branch.at(-1)).toMatchObject({

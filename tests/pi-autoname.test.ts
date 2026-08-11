@@ -10,6 +10,8 @@ import {
   smartFallbackName,
   getFirstDialogue,
   getRecentDialogue,
+  getNamingContext,
+  detectDominantUserLanguage,
   parseRenameMarker,
   shouldRunAutomaticRename,
   DEFAULT_CONFIG,
@@ -39,22 +41,18 @@ describe("normalizeConfig", () => {
       fallbackModels: ["anthropic/claude-3"],
       cooldownMinutes: 5,
       debug: true,
-      locale: "  ru_RU.UTF-8  ",
       maxNameLength: 80,
-      promptExtra: "  Prefer work-ticket prefixes  ",
       ticketPattern: "  \\b([A-Z]+-\\d+)\\b  ",
-      respectManualName: false,
+      respectManualName: true,
     });
     expect(result.enabled).toBe(false);
     expect(result.model).toBe("openai/gpt-4o");
     expect(result.fallbackModels).toEqual(["anthropic/claude-3"]);
     expect(result.cooldownMinutes).toBe(5);
     expect(result.debug).toBe(true);
-    expect(result.locale).toBe("ru_RU.UTF-8");
     expect(result.maxNameLength).toBe(80);
-    expect(result.promptExtra).toBe("Prefer work-ticket prefixes");
     expect(result.ticketPattern).toBe("\\b([A-Z]+-\\d+)\\b");
-    expect(result.respectManualName).toBe(false);
+    expect(result.respectManualName).toBe(true);
   });
 
   it("clamps cooldownMinutes to valid range", () => {
@@ -78,11 +76,8 @@ describe("normalizeConfig", () => {
     expect(result.respectManualName).toBe(true);
   });
 
-  it("DEFAULT_CONFIG defaults respectManualName to false (pi-autoname owns naming)", () => {
-    // Product intent: once pi-autoname is installed, automatic naming owns
-    // the session name. `/name` is effectively redundant. The legacy
-    // `respectManualName: true` opt-in must remain an explicit escape hatch.
-    expect(DEFAULT_CONFIG.respectManualName).toBe(false);
+  it("DEFAULT_CONFIG protects manual names", () => {
+    expect(DEFAULT_CONFIG.respectManualName).toBe(true);
   });
 
   it("rejects non-string fallbackModels entries", () => {
@@ -99,12 +94,10 @@ describe("normalizeConfig", () => {
   });
 
   it("uses default for wrong types", () => {
-    const result = normalizeConfig({ enabled: "yes", debug: 1, locale: 123, maxNameLength: "80", promptExtra: 123, ticketPattern: 456, respectManualName: "true" });
+    const result = normalizeConfig({ enabled: "yes", debug: 1, maxNameLength: "80", ticketPattern: 456, respectManualName: "true" });
     expect(result.enabled).toBe(DEFAULT_CONFIG.enabled);
     expect(result.debug).toBe(DEFAULT_CONFIG.debug);
-    expect(result.locale).toBe(DEFAULT_CONFIG.locale);
     expect(result.maxNameLength).toBe(DEFAULT_CONFIG.maxNameLength);
-    expect(result.promptExtra).toBe(DEFAULT_CONFIG.promptExtra);
     expect(result.ticketPattern).toBe(DEFAULT_CONFIG.ticketPattern);
     expect(result.respectManualName).toBe(DEFAULT_CONFIG.respectManualName);
   });
@@ -532,6 +525,39 @@ describe("getRecentDialogue", () => {
   });
 });
 
+describe("getNamingContext", () => {
+  it("keeps the latest compaction summary with the post-compaction tail", () => {
+    const branch = [
+      { type: "message", message: { role: "user", content: "старый запрос" } },
+      { type: "message", message: { role: "assistant", content: "старый ответ" } },
+      { type: "compaction", summary: "Работаем над сохранением ручного имени расширения" },
+      { type: "message", message: { role: "user", content: "теперь добавь тест на восстановление" } },
+      { type: "message", message: { role: "assistant", content: "добавляю тест" } },
+    ];
+
+    expect(getNamingContext(branch)).toEqual([
+      { role: "summary", text: "Работаем над сохранением ручного имени расширения" },
+      { role: "user", text: "теперь добавь тест на восстановление" },
+      { role: "assistant", text: "добавляю тест" },
+    ]);
+  });
+});
+
+describe("detectDominantUserLanguage", () => {
+  it("detects Russian from user text and ignores assistant language", () => {
+    expect(detectDominantUserLanguage([
+      { role: "user", text: "Проверь, почему имя сессии перезаписывается" },
+      { role: "assistant", text: "Please inspect the session naming flow" },
+    ])).toBe("Russian");
+  });
+
+  it("does not let code identifiers dilute a CJK request", () => {
+    expect(detectDominantUserLanguage([
+      { role: "user", text: "请修复 sessionNameChangedHandler 的问题" },
+    ])).toBe("Chinese");
+  });
+});
+
 describe("parseRenameMarker", () => {
   it("parses an ai source marker", () => {
     const marker = parseRenameMarker({
@@ -573,7 +599,7 @@ describe("parseRenameMarker", () => {
     });
   });
 
-  it("parses a user_rename marker (recorded by agent_end)", () => {
+  it("parses a user_rename marker (recorded by session_info_changed)", () => {
     const marker = parseRenameMarker({
       event: "user_rename",
       name: "My Custom Title",

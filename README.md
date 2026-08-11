@@ -18,9 +18,9 @@
 
 | Scenario | Behavior |
 |---|---|
-| First dialogue settles | Automatically generates a semantic session name |
-| Conversation continues | Silently considers a rename every 10 minutes (configurable) |
-| Session topic drifts | Updates only when the current name no longer fits |
+| First dialogue completes | Automatically generates a semantic session name |
+| Conversation continues | Silently re-names every 10 minutes (configurable) |
+| Session topic drifts | Name updates to reflect the new focus |
 | Run `/autoname` | Manually regenerate from recent context |
 | AI naming fails | Falls back to smart text extraction |
 
@@ -43,7 +43,9 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
   "fallbackModels": [],
   "cooldownMinutes": 10,
   "debug": false,
-  "respectManualName": false
+  "maxNameLength": 30,
+  "ticketPattern": "",
+  "respectManualName": true
 }
 ```
 
@@ -54,7 +56,9 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 | `fallbackModels` | string[] | `[]` | Additional models to try if primary fails |
 | `cooldownMinutes` | number | `10` | Minutes between periodic re-names |
 | `debug` | boolean | `false` | Enable debug logging |
-| `respectManualName` | boolean | `false` | When `false` (default), a `/name` change gets one cooldown window before automatic naming resumes. Set to `true` to keep a user-issued `/name` until `/autoname` is explicitly run. |
+| `maxNameLength` | number | `30` | Max accepted generated name length. Clamped to `3..120` |
+| `ticketPattern` | string | `""` | Optional regex. Exactly one unique match in the first user message is pinned and forced as the prefix of later generated names |
+| `respectManualName` | boolean | `true` | Preserve a name set through Pi's `/name` or session rename UI. `/autoname` remains an explicit opt-in override. |
 
 ### Example: Model fallback chain
 
@@ -71,16 +75,27 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 
 This tries models in order: `MiniMax-M2.7` → `mimo-v2-omni` → session model.
 
+### Example: Longer names with work-ticket prefixes
+
+```json
+{
+  "maxNameLength": 80,
+  "ticketPattern": "\\b((?:DVR|OST|ZATO)-\\d+)\\b"
+}
+```
+
+pi-autoname checks only the first user message and pins the ticket only when the configured pattern produces exactly one unique value. Assistant replies, later dialogue, and an existing session name are not ticket sources. Periodic and `/autoname` renames retain a safely pinned ticket after it leaves the recent conversation window. When no trusted ticket is pinned, a ticket-like prefix suggested by the naming model is removed before the name is saved.
+
 ## 🏗️ How it works
 
 ### Automatic naming
 
 ```
-first complete dialogue
+first user message
         ↓
-Pi reaches agent_settled
+first assistant reply finishes
         ↓
-AI generates a semantic session name in the background
+AI generates semantic session name
         ↓
 setSessionName(name)
 ```
@@ -88,21 +103,21 @@ setSessionName(name)
 ### Periodic re-naming
 
 ```
-agent_settled event (all retry/follow-up work complete)
+agent_settled event (new message processed)
         ↓
 cooldown passed? (10 min default)
         ↓
-AI checks recent context against the current name
+AI generates new name from recent context
         ↓
-topic changed? → silently update
-name still fits? → keep it
+name changed? → silently update
+name same? → skip
 ```
 
 ### Model fallback chain
 
 ```
 primary model (from config)
-        ↓ failed within the shared 30-second budget?
+        ↓ failed?
 fallback models (from config)
         ↓ failed?
 session model (automatic)
@@ -118,7 +133,7 @@ smart text extraction (no AI)
 
 Regenerates the session name from recent conversation context. Useful when you want to force an immediate rename.
 
-### Built-in `/name` is largely redundant
+### Built-in `/name` is preserved
 
 Pi's native command still works:
 
@@ -126,37 +141,21 @@ Pi's native command still works:
 /name My custom title
 ```
 
-With the default `respectManualName: false`, pi-autoname gives `/name` a full `cooldownMinutes` grace period, then may resume automatic naming if the topic changes. It observes the name change immediately through Pi's session metadata event.
-
-- For a one-shot rename that pi-autoname may later take over again: use `/name`.
-- To force a re-name from the current conversation right now: use `/autoname`.
-- To keep a `/name` indefinitely: set `respectManualName: true`. Running `/autoname` remains an explicit override.
-
-#### Stable periodic names
-
-Periodic naming compares recent context with the current title. The model is asked to return the existing title unchanged when it still fits, so the extension avoids needless title churn and session metadata writes.
+When you `/name` a session, pi-autoname observes the change immediately through `session_info_changed`, persists a manual-name marker, and protects that name across future turns and session restores. To explicitly regenerate it, use `/autoname`.
 
 ## 🔐 Privacy note
 
 `pi-autoname` sends a short, recent conversation excerpt to the selected naming model. Before sending, it redacts common secret patterns such as API keys, bearer tokens, AWS access keys, private keys, and `*_TOKEN` / `*_SECRET` / `*_PASSWORD` environment assignments. If the AI call fails and the user text contained a detected secret, the local fallback name is skipped to avoid turning secrets into session names.
 
-## 🌍 Language support
+## 🌍 Naming language
 
-Names use the dominant natural language in user messages: the first user message for initial naming, and recent user messages for periodic or manual naming. Assistant responses, paths, URLs, and code snippets do not determine the language. A user message that contains any Han / Kana / Hangul characters is treated as a CJK-language message, so English noise co-injected into the same turn (system warnings, error logs, tool output) cannot outweigh the user's CJK intent; only purely-Latin user messages contribute to the English score. When no natural-language user text is available, pi-autoname optionally uses the active [pi-di18n](https://github.com/ssdiwu/pi-di18n) `/lang` locale; pi-di18n is never required.
+The naming language is inferred from natural-language text written by the user. Assistant replies, code, paths, and identifiers do not override it. If a session has no natural-language user text, Pi's own locale is used only as a fallback.
+
+After compaction, naming receives the latest compaction summary together with the recent post-compaction message tail, so the title can retain the original task while following the current focus.
 
 ## 🔗 Related
 
 - [pi-compaction-i18n](https://github.com/ssdiwu/pi-compaction-i18n) — localized compaction summaries
-
-## Development
-
-The repository has no development dependency. With Node.js 22.6 or later (Node.js 22.22.3 is the tested baseline), run the built-in TypeScript test runner directly:
-
-```bash
-npm test
-```
-
-Pi provides the two declared peer dependencies at extension runtime.
 
 ## License
 

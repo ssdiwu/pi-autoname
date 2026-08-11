@@ -1,179 +1,654 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
-
+import { describe, it, expect } from "vitest";
 import {
+  normalizeConfig,
+  redactSensitiveText,
+  isHighQualityName,
+  extractTicketPrefix,
+  withTicketPrefix,
+  withoutTicketPrefix,
+  blockText,
+  smartFallbackName,
+  getFirstDialogue,
+  getRecentDialogue,
+  getNamingContext,
+  detectDominantUserLanguage,
+  parseRenameMarker,
+  shouldRunAutomaticRename,
   DEFAULT_CONFIG,
-  MAX_COOLDOWN_MINUTES,
+  MIN_NAME_LENGTH,
   MAX_NAME_LENGTH,
   MIN_COOLDOWN_MINUTES,
-  blockText,
-  detectDominantUserLanguage,
-  getFirstDialogue,
-  getInitialDialogue,
-  getNamingLanguageInstruction,
-  getRecentDialogue,
-  isHighQualityName,
-  normalizeConfig,
-  parseRenameMarker,
-  redactSensitiveText,
-  smartFallbackName,
-} from "../extensions/lib.ts";
+  MAX_COOLDOWN_MINUTES,
+  MIN_CONFIG_NAME_LENGTH,
+  MAX_CONFIG_NAME_LENGTH,
+} from "../extensions/lib.js";
+import { extractCleanName } from "../extensions/index.js";
 
-describe("configuration and privacy", () => {
-  it("normalizes valid configuration and clamps cooldown", () => {
-    assert.deepEqual(normalizeConfig(null), DEFAULT_CONFIG);
-    assert.deepEqual(normalizeConfig({ model: " openai/gpt-5 ", fallbackModels: ["a/b", 1], cooldownMinutes: -1 }), {
-      ...DEFAULT_CONFIG,
-      model: "openai/gpt-5",
-      fallbackModels: ["a/b"],
-      cooldownMinutes: MIN_COOLDOWN_MINUTES,
+// ---------------------------------------------------------------------------
+// normalizeConfig
+// ---------------------------------------------------------------------------
+describe("normalizeConfig", () => {
+  it("returns defaults for null/undefined/empty", () => {
+    expect(normalizeConfig(null)).toEqual(DEFAULT_CONFIG);
+    expect(normalizeConfig(undefined)).toEqual(DEFAULT_CONFIG);
+    expect(normalizeConfig("bad")).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("preserves valid fields", () => {
+    const result = normalizeConfig({
+      enabled: false,
+      model: "openai/gpt-4o",
+      fallbackModels: ["anthropic/claude-3"],
+      cooldownMinutes: 5,
+      debug: true,
+      maxNameLength: 80,
+      ticketPattern: "  \\b([A-Z]+-\\d+)\\b  ",
+      respectManualName: true,
     });
-    assert.equal(normalizeConfig({ cooldownMinutes: 2000 }).cooldownMinutes, MAX_COOLDOWN_MINUTES);
-    assert.equal(normalizeConfig({ cooldownMinutes: Number.NaN }).cooldownMinutes, DEFAULT_CONFIG.cooldownMinutes);
-    assert.equal(normalizeConfig({ fallbackModels: "bad" }).fallbackModels?.length, 0);
-    assert.equal(normalizeConfig({ respectManualName: true }).respectManualName, true);
+    expect(result.enabled).toBe(false);
+    expect(result.model).toBe("openai/gpt-4o");
+    expect(result.fallbackModels).toEqual(["anthropic/claude-3"]);
+    expect(result.cooldownMinutes).toBe(5);
+    expect(result.debug).toBe(true);
+    expect(result.maxNameLength).toBe(80);
+    expect(result.ticketPattern).toBe("\\b([A-Z]+-\\d+)\\b");
+    expect(result.respectManualName).toBe(true);
   });
 
-  it("redacts common secrets without changing clean text", () => {
-    assert.deepEqual(redactSensitiveText("hello"), { text: "hello", redacted: false });
-    const result = redactSensitiveText("API_KEY=secret and Bearer abcdefghijklmnopqrstuvwxyz");
-    assert.equal(result.redacted, true);
-    assert.match(result.text, /API_KEY=\[REDACTED\]/);
-    assert.match(result.text, /Bearer \[REDACTED\]/);
+  it("clamps cooldownMinutes to valid range", () => {
+    expect(normalizeConfig({ cooldownMinutes: -10 }).cooldownMinutes).toBe(MIN_COOLDOWN_MINUTES);
+    expect(normalizeConfig({ cooldownMinutes: 0 }).cooldownMinutes).toBe(MIN_COOLDOWN_MINUTES);
+    expect(normalizeConfig({ cooldownMinutes: 2000 }).cooldownMinutes).toBe(MAX_COOLDOWN_MINUTES);
+    expect(normalizeConfig({ cooldownMinutes: NaN }).cooldownMinutes).toBe(DEFAULT_CONFIG.cooldownMinutes);
+    expect(normalizeConfig({ cooldownMinutes: Infinity }).cooldownMinutes).toBe(DEFAULT_CONFIG.cooldownMinutes);
   });
 
-  it("redacts private keys, AWS keys, and OpenAI-style keys", () => {
-    const result = redactSensitiveText([
-      "-----BEGIN RSA PRIVATE KEY-----\\nsecret\\n-----END RSA PRIVATE KEY-----",
-      "AKIAIOSFODNN7EXAMPLE",
-      "sk-abc123def456ghi789jklmno",
-    ].join(" "));
-    assert.equal(result.redacted, true);
-    assert.doesNotMatch(result.text, /AKIAIOSFODNN7EXAMPLE|sk-abc123def456ghi789jklmno/);
-    assert.match(result.text, /REDACTED_PRIVATE_KEY/);
+  it("clamps maxNameLength to valid range", () => {
+    expect(normalizeConfig({ maxNameLength: -10 }).maxNameLength).toBe(MIN_CONFIG_NAME_LENGTH);
+    expect(normalizeConfig({ maxNameLength: 0 }).maxNameLength).toBe(MIN_CONFIG_NAME_LENGTH);
+    expect(normalizeConfig({ maxNameLength: 2000 }).maxNameLength).toBe(MAX_CONFIG_NAME_LENGTH);
+    expect(normalizeConfig({ maxNameLength: 41.9 }).maxNameLength).toBe(41);
+    expect(normalizeConfig({ maxNameLength: NaN }).maxNameLength).toBe(DEFAULT_CONFIG.maxNameLength);
+  });
+
+  it("respectManualName: true override is preserved (legacy escape hatch)", () => {
+    const result = normalizeConfig({ respectManualName: true });
+    expect(result.respectManualName).toBe(true);
+  });
+
+  it("DEFAULT_CONFIG protects manual names", () => {
+    expect(DEFAULT_CONFIG.respectManualName).toBe(true);
+  });
+
+  it("rejects non-string fallbackModels entries", () => {
+    const result = normalizeConfig({ fallbackModels: ["a/b", 123, null, "c/d", ""] });
+    expect(result.fallbackModels).toEqual(["a/b", "c/d"]);
+  });
+
+  it("defaults fallbackModels to empty array when not array", () => {
+    expect(normalizeConfig({ fallbackModels: "bad" }).fallbackModels).toEqual([]);
+  });
+
+  it("trims model strings", () => {
+    expect(normalizeConfig({ model: "  openai/gpt-4o  " }).model).toBe("openai/gpt-4o");
+  });
+
+  it("uses default for wrong types", () => {
+    const result = normalizeConfig({ enabled: "yes", debug: 1, maxNameLength: "80", ticketPattern: 456, respectManualName: "true" });
+    expect(result.enabled).toBe(DEFAULT_CONFIG.enabled);
+    expect(result.debug).toBe(DEFAULT_CONFIG.debug);
+    expect(result.maxNameLength).toBe(DEFAULT_CONFIG.maxNameLength);
+    expect(result.ticketPattern).toBe(DEFAULT_CONFIG.ticketPattern);
+    expect(result.respectManualName).toBe(DEFAULT_CONFIG.respectManualName);
   });
 });
 
-describe("name quality and fallback", () => {
-  it("accepts concise labels and rejects sentences", () => {
-    assert.equal(isHighQualityName("API重构"), true);
-    assert.equal(isHighQualityName("Session naming fix"), true);
-    assert.equal(isHighQualityName("セッション命名"), true);
-    assert.equal(isHighQualityName("세션 이름"), true);
-    assert.equal(isHighQualityName("Исправление имени"), true);
-    assert.equal(isHighQualityName("我想知道如何修复"), false);
-    assert.equal(isHighQualityName("Good job!"), false);
-    assert.equal(isHighQualityName("ab"), false);
-    assert.equal(isHighQualityName("a".repeat(MAX_NAME_LENGTH + 1)), false);
-    assert.equal(isHighQualityName("你好，世界！不错"), false);
+describe("shouldRunAutomaticRename", () => {
+  it("preserves a manual name when respectManualName is enabled", () => {
+    expect(shouldRunAutomaticRename(true, "user_rename")).toBe(false);
   });
 
-  it("turns user requests into short fallback labels", () => {
-    assert.equal(smartFallbackName("Can you please help me fix the database connection"), "fix the database connection");
-    assert.equal(smartFallbackName("Fix the bug. Then deploy it."), "Fix the bug");
-    assert.equal(smartFallbackName("数据库连接的问题吗"), "数据库连接的问题");
-    assert.ok(smartFallbackName("A".repeat(200)).length <= 50);
+  it("keeps the current automatic policy when respectManualName is disabled", () => {
+    expect(shouldRunAutomaticRename(false, "user_rename")).toBe(true);
+  });
+
+  it("does not block sessions whose current name was generated by the extension", () => {
+    expect(shouldRunAutomaticRename(true, "ai")).toBe(true);
+  });
+
+  it("does not block sessions whose current name is a fallback", () => {
+    expect(shouldRunAutomaticRename(true, "fallback")).toBe(true);
   });
 });
 
-describe("naming language", () => {
-  it("detects the dominant script from user messages only", () => {
-    assert.equal(detectDominantUserLanguage([
-      { role: "user", text: "请修复自动命名的语言，并检查 /Users/diwu/Workspace/project/index.ts" },
-      { role: "assistant", text: "I will inspect the English codebase and return an English summary." },
-    ]), "Chinese");
-    assert.equal(detectDominantUserLanguage([
-      { role: "user", text: "セッションの名前を修正してください" },
-      { role: "user", text: "한국어 제목도 확인해 주세요" },
-    ]), "Japanese");
-
-  it("still detects English when user messages contain no CJK", () => {
-    assert.equal(detectDominantUserLanguage([
-      { role: "user", text: "Please help me name this session" },
-      { role: "assistant", text: "好的，我来处理。" },
-    ]), "English");
-  });
+// ---------------------------------------------------------------------------
+// redactSensitiveText
+// ---------------------------------------------------------------------------
+describe("redactSensitiveText", () => {
+  it("returns clean text unchanged", () => {
+    const r = redactSensitiveText("hello world");
+    expect(r.text).toBe("hello world");
+    expect(r.redacted).toBe(false);
   });
 
-  it("treats CJK intent as dominant over english noise injected into the same user messages", () => {
-    // 回归（来自真实 session）：pi-di18n 把英文 compaction 警告注入 user 消息，与用户中文指令
-    // 同处一个 periodic rename 窗口。旧逻辑按裸字符数累加，Latin 压过中文，整体误判为 English，
-    // 导致模型用英文命名（如 "MacWake handover summary"）。
-    const parts = [
-      { role: "user", text: "为什么无法压缩了呢？" },
-      { role: "user", text: "警告：pi-di18n compaction cancelled: rich-media payload (5877388 bytes) cannot be safely pushed out of context." },
-      { role: "user", text: "可以，请生成交接摘要，但不需要脱敏" },
+  it("redacts OpenAI-style API keys", () => {
+    const r = redactSensitiveText("my key is sk-abc123def456ghi789jklmno");
+    expect(r.text).not.toContain("sk-abc123def456ghi789jklmno");
+    expect(r.text).toContain("[REDACTED_API_KEY]");
+    expect(r.redacted).toBe(true);
+  });
+
+  it("redacts AWS access keys", () => {
+    const r = redactSensitiveText("key: AKIAIOSFODNN7EXAMPLE");
+    expect(r.text).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(r.text).toContain("[REDACTED_AWS_KEY]");
+    expect(r.redacted).toBe(true);
+  });
+
+  it("redacts private keys", () => {
+    const text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEow...\n-----END RSA PRIVATE KEY-----";
+    const r = redactSensitiveText(text);
+    expect(r.text).toContain("[REDACTED_PRIVATE_KEY]");
+    expect(r.redacted).toBe(true);
+  });
+
+  it("redacts Bearer tokens", () => {
+    const r = redactSensitiveText("Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.abc.def");
+    expect(r.text).toContain("Bearer [REDACTED]");
+    expect(r.redacted).toBe(true);
+  });
+
+  it("redacts KEY=VALUE patterns", () => {
+    const r = redactSensitiveText("API_KEY=supersecret123");
+    expect(r.text).toContain("API_KEY=[REDACTED]");
+    expect(r.redacted).toBe(true);
+  });
+
+  it("redacts token/password key-value patterns", () => {
+    const r = redactSensitiveText('token: "my-secret-token-value"');
+    expect(r.text).toContain("token=[REDACTED]");
+    expect(r.redacted).toBe(true);
+  });
+
+  it("redacts quoted uppercase assignment values with spaces", () => {
+    const r = redactSensitiveText('API_PASSWORD="correct horse battery staple"');
+    expect(r.text).toBe("API_PASSWORD=[REDACTED]");
+    expect(r.text).not.toContain("correct");
+    expect(r.text).not.toContain("horse");
+    expect(r.text).not.toContain("battery");
+    expect(r.text).not.toContain("staple");
+    expect(r.redacted).toBe(true);
+  });
+
+  it("redacts quoted generic secret values with spaces", () => {
+    const r = redactSensitiveText("MY_TOKEN='part one two'");
+    expect(r.text).toBe("MY_TOKEN=[REDACTED]");
+    expect(r.text).not.toContain("part");
+    expect(r.text).not.toContain("one");
+    expect(r.text).not.toContain("two");
+    expect(r.redacted).toBe(true);
+  });
+
+  it("handles multiple secrets in one text", () => {
+    const r = redactSensitiveText("key sk-1234567890abcdef1234567890abcdef and AKIAIOSFODNN7EXAMPLE");
+    expect(r.text).not.toContain("sk-1234567890abcdef1234567890abcdef");
+    expect(r.text).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(r.redacted).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isHighQualityName
+// ---------------------------------------------------------------------------
+describe("isHighQualityName", () => {
+  it("accepts good CJK names", () => {
+    expect(isHighQualityName("API重构")).toBe(true);
+    expect(isHighQualityName("部署脚本调试")).toBe(true);
+    expect(isHighQualityName("数据库迁移")).toBe(true);
+  });
+
+  it("accepts good English names", () => {
+    expect(isHighQualityName("Session naming fix")).toBe(true);
+    expect(isHighQualityName("Auth refactor")).toBe(true);
+  });
+
+  it("accepts good Cyrillic names", () => {
+    expect(isHighQualityName("Настройка русских названий")).toBe(true);
+    expect(isHighQualityName("ABC-123 настройка названий")).toBe(true);
+  });
+
+  it("rejects too short", () => {
+    expect(isHighQualityName("ab")).toBe(false);
+    expect(isHighQualityName("")).toBe(false);
+  });
+
+  it("rejects too long", () => {
+    expect(isHighQualityName("a".repeat(MAX_NAME_LENGTH + 1))).toBe(false);
+    expect(isHighQualityName("a".repeat(MAX_NAME_LENGTH + 1), 80)).toBe(true);
+  });
+
+  it("rejects sentence-like openers", () => {
+    // RAW_SLICE_RE catches names starting with these patterns
+    expect(isHighQualityName("我想知道如何修复")).toBe(false);
+    expect(isHighQualityName("Can you help me")).toBe(false);
+    expect(isHighQualityName("I want to know")).toBe(false);
+    expect(isHighQualityName("为什么报错")).toBe(false);
+  });
+
+  it("rejects sentence-ending punctuation", () => {
+    expect(isHighQualityName("已完成配置。")).toBe(false);
+    expect(isHighQualityName("Good job!")).toBe(false);
+    expect(isHighQualityName("Really?")).toBe(false);
+  });
+
+  it("rejects multiple internal punctuation marks", () => {
+    expect(isHighQualityName("你好，世界！不错")).toBe(false);
+  });
+
+  it("accepts single comma in CJK (typical)", () => {
+    // RAW_SLICE_RE rejects names starting with common prefixes like 你
+    // but a comma in mid-phrase is allowed if the name itself is valid
+    expect(isHighQualityName("修复，重构")).toBe(true);
+  });
+
+  it("accepts names from localized Unicode scripts", () => {
+    expect(isHighQualityName("Исправление тестов")).toBe(true);
+    expect(isHighQualityName("إصلاح الاختبارات")).toBe(true);
+  });
+});
+
+describe("extractCleanName", () => {
+  it("preserves Unicode combining marks in localized names", () => {
+    const name = "Cafe\u0301 debugging";
+    expect(extractCleanName({ content: [{ type: "text", text: name }] })).toBe(name);
+  });
+
+  it("normalizes all whitespace to a single line", () => {
+    const name = "API\nrefactor\tplan\r\n";
+    expect(extractCleanName({ content: [{ type: "text", text: name }] })).toBe("API refactor plan");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ticket prefix helpers
+// ---------------------------------------------------------------------------
+describe("ticket prefix helpers", () => {
+  const parts = [{ role: "user", text: "Please handle ABC-123 naming config" }];
+
+  it("extracts the first capture group from ticketPattern", () => {
+    expect(extractTicketPrefix(parts, "\\b([A-Z]+-\\d+)\\b")).toBe("ABC-123");
+  });
+
+  it("ignores ticket-like values from assistant messages", () => {
+    expect(
+      extractTicketPrefix(
+        [
+          { role: "user", text: "Изучи наше расширение" },
+          { role: "assistant", text: "Сравним DVR-12665 и DVR-12801" },
+        ],
+        "\\b([A-Z]+-\\d+)\\b",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when user context contains different tickets", () => {
+    expect(
+      extractTicketPrefix(
+        [{ role: "user", text: "Сравни DVR-12665 и DVR-12801" }],
+        "\\b([A-Z]+-\\d+)\\b",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("deduplicates repeated mentions of the same user ticket", () => {
+    expect(
+      extractTicketPrefix(
+        [{ role: "user", text: "DVR-12665 соответствует ссылке /browse/DVR-12665" }],
+        "\\b([A-Z]+-\\d+)\\b",
+      ),
+    ).toBe("DVR-12665");
+  });
+
+  it("returns undefined for missing or invalid ticketPattern", () => {
+    expect(extractTicketPrefix(parts, "")).toBeUndefined();
+    expect(extractTicketPrefix(parts, "[")).toBeUndefined();
+  });
+
+  it("adds ticket prefix without duplicating it", () => {
+    expect(withTicketPrefix("naming config", "ABC-123")).toBe("ABC-123 naming config");
+    expect(withTicketPrefix("ABC-123 naming config", "ABC-123")).toBe("ABC-123 naming config");
+  });
+
+  it("keeps the ticket-prefixed name within maxNameLength", () => {
+    expect(withTicketPrefix("a very descriptive naming config", "ABC-123", 12)).toBe("ABC-123 a ve");
+    expect(withTicketPrefix("naming config", "ABC-123", 7)).toBe("ABC-123");
+  });
+
+  it("does not persist a partial ticket prefix when the limit is shorter", () => {
+    expect(withTicketPrefix("naming config", "DVR-12665", 8)).toBe("naming c");
+    expect(withTicketPrefix("naming config", "DVR-12665", 8)).not.toContain("DVR-1266");
+  });
+
+  it("returns an empty result when an oversized prefix has no descriptive suffix", () => {
+    expect(withTicketPrefix("DVR-12665", "DVR-12665", 8)).toBe("");
+  });
+
+  it("removes an untrusted generated ticket prefix", () => {
+    expect(
+      withoutTicketPrefix(
+        "DVR-12665 Проверка расширения",
+        "\\b((?:DVR|OST|ZATO)-\\d+)\\b",
+      ),
+    ).toBe("Проверка расширения");
+    expect(
+      withoutTicketPrefix(
+        "Проверка расширения",
+        "\\b((?:DVR|OST|ZATO)-\\d+)\\b",
+      ),
+    ).toBe("Проверка расширения");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// blockText
+// ---------------------------------------------------------------------------
+describe("blockText", () => {
+  it("returns string as-is", () => {
+    expect(blockText("hello")).toBe("hello");
+  });
+
+  it("joins text blocks", () => {
+    const content = [
+      { type: "text", text: "hello" },
+      { type: "text", text: "world" },
     ];
-    assert.equal(detectDominantUserLanguage(parts), "Chinese");
-    assert.match(getNamingLanguageInstruction(parts), /Chinese/);
+    expect(blockText(content)).toBe("hello world");
   });
 
-  it("uses pi-di18n locale only when user text has no detectable natural language", () => {
-    assert.match(
-      getNamingLanguageInstruction([{ role: "user", text: "const title = makeName();" }], "ja"),
-      /Japanese/i,
-    );
+  it("filters non-text blocks", () => {
+    const content = [
+      { type: "text", text: "hello" },
+      { type: "image", url: "img.png" },
+      { type: "text", text: "world" },
+    ];
+    expect(blockText(content)).toBe("hello world");
+  });
+
+  it("returns empty for null/undefined", () => {
+    expect(blockText(null)).toBe("");
+    expect(blockText(undefined)).toBe("");
+    expect(blockText(123)).toBe("");
   });
 });
 
-describe("dialogue extraction", () => {
-  const branch = [
-    { type: "message", message: { role: "user", content: "first request" } },
-    { type: "message", message: { role: "assistant", content: [{ type: "text", text: "first reply" }] } },
-    { type: "message", message: { role: "user", content: "current task" } },
-    { type: "message", message: { role: "assistant", content: [{ type: "text", text: "current progress" }] } },
-  ];
-
-  it("extracts text blocks and the first dialogue pair", () => {
-    assert.equal(blockText([{ type: "image" }, { type: "text", text: "hello" }]), "hello");
-    assert.equal(blockText(null), "");
-    assert.deepEqual(getFirstDialogue(branch), { firstUser: "first request", firstAssistant: "first reply" });
+// ---------------------------------------------------------------------------
+// smartFallbackName
+// ---------------------------------------------------------------------------
+describe("smartFallbackName", () => {
+  it("strips conversational openers (Chinese)", () => {
+    const name = smartFallbackName("我想知道如何修复数据库连接错误的问题");
+    expect(name).not.toMatch(/^我想知道/);
+    expect(name.length).toBeGreaterThan(0);
   });
 
-  it("uses a compaction summary when it precedes the first user message", () => {
-    assert.deepEqual(getFirstDialogue([
-      { type: "compaction", summary: [{ type: "text", text: "older task" }] },
+  it("strips conversational openers (English)", () => {
+    const name = smartFallbackName("Can you please help me fix the database connection");
+    expect(name).not.toMatch(/^Can you/i);
+    expect(name.length).toBeGreaterThan(0);
+  });
+
+  it("keeps long fallback within the session name limit", () => {
+    const long = "Investigate the database connection timeout in the production deployment pipeline";
+    const name = smartFallbackName(long);
+    expect(name).toBe("Investigate the database");
+    expect(name.length).toBeLessThanOrEqual(MAX_NAME_LENGTH);
+    expect(isHighQualityName(name)).toBe(true);
+  });
+
+  it("truncates at sentence boundary when early", () => {
+    // Truncates at first . then strips trailing punctuation
+    const name = smartFallbackName("Fix the bug. Then deploy it.");
+    expect(name).toBe("Fix the bug");
+  });
+
+  it("strips trailing particles (Chinese)", () => {
+    const name = smartFallbackName("数据库连接的问题吗");
+    expect(name).not.toMatch(/[吗呢吧]$/);
+  });
+
+  it("returns raw slice for short text", () => {
+    const name = smartFallbackName("短文本");
+    expect(name).toBe("短文本");
+  });
+
+  it("handles empty text gracefully", () => {
+    const name = smartFallbackName("   ");
+    expect(name.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("keeps the raw fallback branch within the session name limit", () => {
+    const name = smartFallbackName("请" + "a".repeat(MAX_NAME_LENGTH + 10));
+    expect(name).toHaveLength(MAX_NAME_LENGTH);
+    expect(name.length).toBeLessThanOrEqual(MAX_NAME_LENGTH);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getFirstDialogue
+// ---------------------------------------------------------------------------
+describe("getFirstDialogue", () => {
+  it("extracts first user + assistant pair", () => {
+    const branch = [
+      { type: "message", message: { role: "user", content: "hello" } },
+      { type: "message", message: { role: "assistant", content: "hi there" } },
+    ];
+    const result = getFirstDialogue(branch);
+    expect(result.firstUser).toBe("hello");
+    expect(result.firstAssistant).toBe("hi there");
+  });
+
+  it("compaction summary fills firstUser before user messages", () => {
+    // If a compaction entry appears before the first user message,
+    // its summary becomes firstUser and later user messages are skipped
+    const branch = [
+      { type: "compaction", summary: "old summary" },
+      { type: "message", message: { role: "user", content: "question" } },
+      { type: "message", message: { role: "assistant", content: "answer" } },
+    ];
+    const result = getFirstDialogue(branch);
+    expect(result.firstUser).toBe("old summary");
+    expect(result.firstAssistant).toBe("answer");
+  });
+
+  it("uses compaction summary as user text when no user message yet", () => {
+    const branch = [
+      { type: "compaction", summary: [{ type: "text", text: "compacted user msg" }] },
       { type: "message", message: { role: "assistant", content: "reply" } },
-    ]), { firstUser: "older task", firstAssistant: "reply" });
+    ];
+    const result = getFirstDialogue(branch);
+    expect(result.firstUser).toBe("compacted user msg");
+    expect(result.firstAssistant).toBe("reply");
   });
 
-  it("scans the tail only while preserving chronological recent dialogue", () => {
-    assert.deepEqual(getRecentDialogue(branch, 2), [
-      { role: "user", text: "current task" },
-      { role: "assistant", text: "current progress" },
+  it("returns undefined for missing assistant", () => {
+    const branch = [{ type: "message", message: { role: "user", content: "hello" } }];
+    const result = getFirstDialogue(branch);
+    expect(result.firstUser).toBe("hello");
+    expect(result.firstAssistant).toBeUndefined();
+  });
+
+  it("returns undefined for empty branch", () => {
+    const result = getFirstDialogue([]);
+    expect(result.firstUser).toBeUndefined();
+    expect(result.firstAssistant).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getRecentDialogue
+// ---------------------------------------------------------------------------
+describe("getRecentDialogue", () => {
+  it("extracts recent messages in order", () => {
+    const branch = [
+      { type: "message", message: { role: "user", content: "a" } },
+      { type: "message", message: { role: "assistant", content: "b" } },
+      { type: "message", message: { role: "user", content: "c" } },
+    ];
+    const result = getRecentDialogue(branch, 2);
+    expect(result).toEqual([
+      { role: "assistant", text: "b" },
+      { role: "user", text: "c" },
     ]);
-    assert.deepEqual(getRecentDialogue([
+  });
+
+  it("skips non-user/assistant messages", () => {
+    const branch = [
       { type: "message", message: { role: "system", content: "hidden" } },
       { type: "message", message: { role: "user", content: "visible" } },
-    ]), [{ role: "user", text: "visible" }]);
+    ];
+    const result = getRecentDialogue(branch);
+    expect(result).toEqual([{ role: "user", text: "visible" }]);
   });
 
-  it("uses recent context when an unmarked session already has a history", () => {
-    assert.deepEqual(getInitialDialogue(branch), [
-      { role: "user", text: "first request" },
-      { role: "assistant", text: "first reply" },
-      { role: "user", text: "current task" },
-      { role: "assistant", text: "current progress" },
-    ]);
-    assert.deepEqual(getInitialDialogue(branch.slice(0, 2)), [
-      { role: "user", text: "first request" },
-      { role: "assistant", text: "first reply" },
+  it("respects maxMessages limit", () => {
+    const branch = Array.from({ length: 20 }, (_, i) => ({
+      type: "message",
+      message: { role: i % 2 === 0 ? "user" : "assistant", content: `msg-${i}` },
+    }));
+    const result = getRecentDialogue(branch, 3);
+    expect(result).toHaveLength(3);
+    expect(result[0].text).toBe("msg-17");
+  });
+
+  it("returns empty for empty branch", () => {
+    expect(getRecentDialogue([])).toEqual([]);
+  });
+});
+
+describe("getNamingContext", () => {
+  it("keeps the latest compaction summary with the post-compaction tail", () => {
+    const branch = [
+      { type: "message", message: { role: "user", content: "старый запрос" } },
+      { type: "message", message: { role: "assistant", content: "старый ответ" } },
+      { type: "compaction", summary: "Работаем над сохранением ручного имени расширения" },
+      { type: "message", message: { role: "user", content: "теперь добавь тест на восстановление" } },
+      { type: "message", message: { role: "assistant", content: "добавляю тест" } },
+    ];
+
+    expect(getNamingContext(branch)).toEqual([
+      { role: "summary", text: "Работаем над сохранением ручного имени расширения" },
+      { role: "user", text: "теперь добавь тест на восстановление" },
+      { role: "assistant", text: "добавляю тест" },
     ]);
   });
 });
 
-describe("rename markers", () => {
-  it("parses generated and manual rename markers defensively", () => {
-    assert.deepEqual(parseRenameMarker({ name: "标题", source: "ai", timestamp: 1 }), {
-      kind: "ai", name: "标题", source: "ai", timestamp: 1,
+describe("detectDominantUserLanguage", () => {
+  it("detects Russian from user text and ignores assistant language", () => {
+    expect(detectDominantUserLanguage([
+      { role: "user", text: "Проверь, почему имя сессии перезаписывается" },
+      { role: "assistant", text: "Please inspect the session naming flow" },
+    ])).toBe("Russian");
+  });
+
+  it("does not let code identifiers dilute a CJK request", () => {
+    expect(detectDominantUserLanguage([
+      { role: "user", text: "请修复 sessionNameChangedHandler 的问题" },
+    ])).toBe("Chinese");
+  });
+});
+
+describe("parseRenameMarker", () => {
+  it("parses an ai source marker", () => {
+    const marker = parseRenameMarker({
+      name: "测试自动命名",
+      source: "ai",
+      timestamp: 1700000000000,
     });
-    assert.deepEqual(parseRenameMarker({ name: "fallback", source: "fallback", timestamp: 2 }), {
-      kind: "fallback", name: "fallback", source: "fallback", timestamp: 2,
+    expect(marker).toEqual({
+      kind: "ai",
+      name: "测试自动命名",
+      source: "ai",
+      timestamp: 1700000000000,
     });
-    assert.deepEqual(parseRenameMarker({ event: "user_rename", name: "Manual" }), {
-      kind: "user_rename", name: "Manual", timestamp: 0,
+  });
+
+  it("parses a fallback source marker", () => {
+    const marker = parseRenameMarker({
+      name: "fallback-name",
+      source: "fallback",
+      timestamp: 1700000000001,
     });
-    assert.equal(parseRenameMarker({ source: "unknown", name: "x" }), undefined);
-    assert.equal(parseRenameMarker(null), undefined);
+    expect(marker?.kind).toBe("fallback");
+  });
+
+  it("сохраняет ticketPrefix из маркера автоматического имени", () => {
+    const marker = parseRenameMarker({
+      name: "DVR-12665 Проверка ревью",
+      source: "ai",
+      ticketPrefix: "DVR-12665",
+      timestamp: 1700000000002,
+    });
+
+    expect(marker).toEqual({
+      kind: "ai",
+      name: "DVR-12665 Проверка ревью",
+      source: "ai",
+      ticketPrefix: "DVR-12665",
+      timestamp: 1700000000002,
+    });
+  });
+
+  it("parses a user_rename marker (recorded by session_info_changed)", () => {
+    const marker = parseRenameMarker({
+      event: "user_rename",
+      name: "My Custom Title",
+      timestamp: 1700000000002,
+    });
+    expect(marker).toEqual({
+      kind: "user_rename",
+      name: "My Custom Title",
+      timestamp: 1700000000002,
+    });
+  });
+
+  it("prefers user_rename over source when both are present (defensive)", () => {
+    // Defensive: malformed data shouldn't reach this point, but if it
+    // does, the user_rename branch wins because it has more context.
+    const marker = parseRenameMarker({
+      event: "user_rename",
+      name: "X",
+      source: "ai",
+      timestamp: 1,
+    });
+    expect(marker?.kind).toBe("user_rename");
+  });
+
+  it("returns undefined for non-object data", () => {
+    expect(parseRenameMarker(null)).toBeUndefined();
+    expect(parseRenameMarker(undefined)).toBeUndefined();
+    expect(parseRenameMarker("string")).toBeUndefined();
+    expect(parseRenameMarker(42)).toBeUndefined();
+  });
+
+  it("returns undefined when neither flavor matches", () => {
+    expect(parseRenameMarker({})).toBeUndefined();
+    expect(parseRenameMarker({ name: "x" })).toBeUndefined();
+    expect(parseRenameMarker({ source: "bogus", name: "x" })).toBeUndefined();
+    expect(parseRenameMarker({ event: "user_rename" })).toBeUndefined();
+    expect(parseRenameMarker({ event: "user_rename", name: 123 })).toBeUndefined();
+  });
+
+  it("defaults missing timestamp to 0", () => {
+    const marker = parseRenameMarker({
+      name: "X",
+      source: "ai",
+    });
+    expect(marker).toEqual({
+      kind: "ai",
+      name: "X",
+      source: "ai",
+      timestamp: 0,
+    });
   });
 });

@@ -1,48 +1,63 @@
 # Pi 版本兼容性与影响分析
 
-> 记录上游 Pi 更新对本项目的直接影响和可执行兼容策略。
+> 记录上游 Pi 更新对本项目的直接影响和可改进点，供维护决策参考。
 
-## 当前基线
+---
 
-- Pi：`0.80.10`
-- pi-autoname：使用 Pi Extension（扩展）和 Pi 宿主提供的 peer dependency（对等依赖），不安装额外运行或开发依赖。
+## 适用范围
 
-## 直接采用的 Pi 0.80.x 能力
+> 本项目直接使用 Pi API，因此通过 npm peerDependencies 声明并验证兼容范围。
 
-| Pi 能力 | 项目用法 | 收益 |
-|---|---|---|
-| `agent_settled` | 在所有自动重试、压缩重试和后续消息结束后，后台考虑自动命名 | 避免对未稳定上下文过早命名 |
-| `session_info_changed` | 立即记录 `/name` 或 UI 改名 | 不再等下一轮代理事件才能识别手工名称 |
-| `session_shutdown` | 取消未完成的命名请求 | 防止切换、重载或退出后旧请求迟到写入 |
-| `ModelRegistry` | 从当前运行时模型目录解析配置的 `provider/modelId` | 兼容 Pi 动态 provider（提供商）与模型目录 |
+> 当前支持范围：`@earendil-works/pi-ai` 与 `@earendil-works/pi-coding-agent` `>=0.80.10`。
 
-## 模型调用兼容性
+> `0.80.10` 是本项目的最低测试基线；CI 使用该版本锁定依赖执行测试、类型检查和兼容性契约检查。命名调用使用 `@earendil-works/pi-ai/compat`，因此没有人为设置旧版本上限。
 
-Pi `0.80` 将旧的全局 `complete()` / `getModel()` API（接口）从 `@earendil-works/pi-ai` 根入口移至 `@earendil-works/pi-ai/compat`。本项目显式使用 compat（兼容）入口：
+> 该范围来自当前代码使用的 Extension API、model registry、compat `complete` 和 session 管理接口；发布新 Pi 版本后，应先在兼容性检查中验证。
 
-- `complete()` 继续执行独立命名请求；
-- 模型解析只使用 `ctx.modelRegistry.find()`，不再回退旧的静态 `getModel()`；
-- `ctx.modelRegistry.getApiKeyAndHeaders()` 保留为 Extension（扩展）兼容门面。
+---
 
-这是当前 Pi 官方 Extension（扩展）示例仍使用的路径；未来若 Pi 将 `ModelRegistry` 替换为公开的 `ModelRuntime`（模型运行时）上下文接口，再做单独迁移。
+## 影响评估：🟢 低 — Skill Prompt 间距修复带来微小利好
 
-## 性能与生命周期边界
+### 变更详情
 
-- 自动命名在 `agent_settled` 后以 best-effort（尽力而为）后台任务运行，不阻塞主代理收口。
-- 每次命名拥有 30 秒共享预算；单个模型最多 12 秒，回退链不会按模型数线性叠加等待。
-- `session_shutdown` 和新的命名请求都会 abort（中止）旧请求。
-- 当前标题会一并提供给模型；标题仍准确时保持不变，避免会话选择器抖动。
+> Fixed skill-wrapped prompts to insert spacing between skill instructions and the user message (#5371).
 
-## 保留的兼容契约
+### 与 autoname 的关系
 
-- `pi.setSessionName()` / `pi.getSessionName()` 管理显示名称。
-- `pi.appendEntry("pi-autoname-state", ...)` 持久化扩展 marker（标记）；marker 不进入 LLM（大语言模型）上下文。
-- `respectManualName: false` 时，手工 `/name` 获得一个冷却窗口；`true` 时保持到用户显式运行 `/autoname`。
-- AI 调用失败后仍可使用本地、脱敏的降级标题。
+pi-autoname 是一个 **extension**（通过 `pi.extensions[]` 注册），不是 skill。它的核心流程：
+
+1. 监听 `agent_settled` 事件
+2. 收集会话消息
+3. 调用 LLM 生成语义化名称
+4. 通过 `pi.setSessionName()` 设置名称（读取用 `pi.getSessionName()`，会话分支用 `ctx.sessionManager.getBranch()`）
+
+### 直接影响
+
+| 维度 | 说明 |
+|------|------|
+| Extension 路径 | 🔵 **无直接影响** — autoname 是 extension，不走 skill wrapper |
+| 间接利好 | ⚠️ **微小** — 如果用户通过某种 skill 包装方式触发命名（非标准用法），间距问题已解决 |
+
+### 建议动作
+
+**无需专门处理。** 本更新对 autoname 是纯正面（减少边缘情况的异常），不需要代码改动。
+
+---
+
+## 次要关联
+
+| 变更项 | 影响 | 说明 |
+|--------|------|------|
+| Compaction summary | 🟢 已处理 | autoname 将最新 summary 与 compaction 后消息尾部一起用于命名 |
+| Project Trust | 🔵 无 | 全局 extension，不依赖项目本地资源 |
+| SDK / RPC 类型导出 | 🔵 无 | autoname 不涉及 RPC / UI 类型 |
+| Cache-hit CH | 📊 可观测 | autoname 的 LLM 调用在 `agent_settled` 后以后台任务执行，不计入主会话 CH |
+
+---
 
 ## 版本记录
 
 | 日期 | Pi 基线 | 变更 |
-|---|---|---|
-| 2026-07-18 | `0.80.10` | 对齐新生命周期、模型 compat（兼容）入口和模型运行时目录 |
-| 2026-06-09 | 发布版 | 初版：确认 skill prompt（技能提示词）间距修复对本扩展低影响 |
+|------|---------|------|
+| 2026-06-09 | 2026-06-09 发布版 | 初版创建；确认为低影响 |
+| 2026-08-11 | >=0.80.10 | 切换 compat API 与 controller lifecycle；增加手动名称保护和 compaction-aware naming context |

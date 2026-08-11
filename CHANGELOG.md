@@ -7,36 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- Language detection no longer lets English co-injected into a CJK user message (e.g. system warnings, error logs, or tool output that Pi places inside a user turn) outweigh the user's actual CJK intent. A user message containing any Han/Kana/Hangul is now treated as a CJK-language message; only purely-Latin user messages contribute to the English score. Fixes periodic/`/autoname` titles flipping to English when a recent user turn carried a long English warning (e.g. a `pi-di18n` compaction notice).
-
-## [0.6.8] - 2026-07-22
-
-### Fixed
-
-- Detect the dominant language from user-authored natural-language messages before naming; use pi-di18n's active `/lang` locale only as an optional fallback when the user text is code-only or unavailable.
-
-## [0.6.7] - 2026-07-22
+- Controller-based lifecycle with cancellation, `session_info_changed` manual-name detection, `agent_settled` naming, and `session_shutdown` cleanup.
+- Compaction-aware naming context: the latest summary is combined with the recent post-compaction message tail.
+- User-message language detection, including Russian and CJK script handling.
+- Optional `maxNameLength` and `ticketPattern` prefix extraction retained from the fork.
 
 ### Fixed
 
-- Auto-generated names now follow the language predominantly used in user messages instead of being forced by the host system locale.
-
-## [0.6.6] - 2026-07-18
-
-### Changed
-
-- Auto-naming now runs after Pi's fully settled lifecycle event, cancels stale requests on session changes, and bounds the complete model fallback chain to a shared 30-second budget.
-- Periodic naming compares the current title with recent context so unchanged topics keep their existing title; older unmarked sessions use recent context rather than an obsolete first exchange.
-- `/name` changes are observed immediately. `respectManualName: true` now keeps a manual title until `/autoname` is explicitly invoked.
-- Development tests now use Node.js built-in `node:test` directly on TypeScript. Vitest and all project development dependencies were removed.
+- Accept Unicode letter/number session names so locale-generated names are not limited to CJK and English.
+- Preserve manual names by default (`respectManualName: true`); `/autoname` remains an explicit override.
+- Infer naming language from user-authored natural language instead of a manual locale setting.
+- Persist a single unambiguous task ticket from the first user message so later renames retain it without learning unrelated IDs from assistant replies, later discussion, legacy session names, or an untrusted model-generated prefix.
 
 ## [0.6.5] - 2026-06-18
 
 ### Added
 
-- Extension lifecycle tests for `session_start`, `agent_end`, cooldown gating, out-of-band `/name` detection, and current-session JSONL diagnostics.
+- Extension lifecycle tests for `session_start`, `agent_settled`, cooldown gating, immediate out-of-band `/name` detection, and current-session JSONL diagnostics.
 - `readSessionFileDiagnostics()` helper to inspect the active session file's latest `session_info` and `pi-autoname-state` entries during debug runs.
 
 ### Changed

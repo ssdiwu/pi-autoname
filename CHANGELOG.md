@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Configurable naming preferences: `locale`, `maxNameLength`, `promptExtra`, and `ticketPattern`.
+
 ### Fixed
 
 - Language detection no longer lets English co-injected into a CJK user message (e.g. system warnings, error logs, or tool output that Pi places inside a user turn) outweigh the user's actual CJK intent. A user message containing any Han/Kana/Hangul is now treated as a CJK-language message; only purely-Latin user messages contribute to the English score. Fixes periodic/`/autoname` titles flipping to English when a recent user turn carried a long English warning (e.g. a `pi-di18n` compaction notice).
+- Ticket prefixes are trusted only when a single unique ticket is found in the first user message, persisted between renames, and removed when suggested only by the model. The configured maximum now applies to the complete saved name, including the ticket prefix.
 
 ## [0.6.8] - 2026-07-22
 

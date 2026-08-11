@@ -59,6 +59,22 @@ describe("naming lifecycle", () => {
     assert.deepEqual(test.markers, [{ name: "语义化标题", source: "ai", timestamp: 1_000 }]);
   });
 
+  it("persists a trusted ticket prefix across later renames", async () => {
+    const test = createRuntime({
+      generated: { name: "ABC-123 initial", source: "ai", ticketPrefix: "ABC-123" },
+    });
+    test.controller.restore(undefined, undefined);
+
+    await test.controller.handleSettled();
+    assert.deepEqual(test.markers.at(-1), {
+      name: "ABC-123 initial", source: "ai", ticketPrefix: "ABC-123", timestamp: 1_000,
+    });
+
+    test.advance(11 * 60_000);
+    await test.controller.handleSettled();
+    assert.equal(test.requests.at(-1)?.ticketPrefix, "ABC-123");
+  });
+
   it("skips periodic renaming before cooldown and names after it", async () => {
     const test = createRuntime({ name: "旧标题", generated: { name: "新标题", source: "ai" } });
     test.controller.restore({ kind: "ai", name: "旧标题", source: "ai", timestamp: 1_000 }, "旧标题");

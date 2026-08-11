@@ -43,6 +43,10 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
   "fallbackModels": [],
   "cooldownMinutes": 10,
   "debug": false,
+  "locale": "",
+  "maxNameLength": 30,
+  "promptExtra": "",
+  "ticketPattern": "",
   "respectManualName": false
 }
 ```
@@ -54,6 +58,10 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 | `fallbackModels` | string[] | `[]` | Additional models to try if primary fails |
 | `cooldownMinutes` | number | `10` | Minutes between periodic re-names |
 | `debug` | boolean | `false` | Enable debug logging |
+| `locale` | string | `""` | Override the locale used when user messages contain no detectable natural language |
+| `maxNameLength` | number | `30` | Maximum saved name length, including any ticket prefix. Clamped to `3..120` |
+| `promptExtra` | string | `""` | Extra instruction appended to the naming prompt |
+| `ticketPattern` | string | `""` | Optional regex. Exactly one unique match in the first user message is pinned and forced as the prefix of later generated names |
 | `respectManualName` | boolean | `false` | When `false` (default), a `/name` change gets one cooldown window before automatic naming resumes. Set to `true` to keep a user-issued `/name` until `/autoname` is explicitly run. |
 
 ### Example: Model fallback chain
@@ -70,6 +78,12 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 ```
 
 This tries models in order: `MiniMax-M2.7` → `mimo-v2-omni` → session model.
+
+### Configurable naming preferences
+
+`locale` is used only when user-authored text does not identify a natural language. `promptExtra` is appended as a user preference, and `maxNameLength` applies to the complete saved name, including a trusted ticket prefix.
+
+With `ticketPattern`, pi-autoname scans only the first user message. It pins a ticket only when there is exactly one unique match; assistant replies, later dialogue, and existing session names are never ticket sources. The pinned ticket is persisted between renames. If no trusted ticket exists, a ticket-like prefix returned by the model is removed before saving.
 
 ## 🏗️ How it works
 

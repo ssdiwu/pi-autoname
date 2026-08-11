@@ -7,7 +7,12 @@ import {
   MAX_NAME_LENGTH,
   MIN_COOLDOWN_MINUTES,
   blockText,
+  compileTicketPattern,
   detectDominantUserLanguage,
+  extractTicketPrefix,
+  limitNameLength,
+  withoutTicketPrefix,
+  withTicketPrefix,
   getFirstDialogue,
   getInitialDialogue,
   getNamingLanguageInstruction,
@@ -32,6 +37,13 @@ describe("configuration and privacy", () => {
     assert.equal(normalizeConfig({ cooldownMinutes: Number.NaN }).cooldownMinutes, DEFAULT_CONFIG.cooldownMinutes);
     assert.equal(normalizeConfig({ fallbackModels: "bad" }).fallbackModels?.length, 0);
     assert.equal(normalizeConfig({ respectManualName: true }).respectManualName, true);
+    assert.deepEqual(normalizeConfig({ locale: " ru_RU ", maxNameLength: 80, promptExtra: " longer ", ticketPattern: " \\b([A-Z]+-\\d+)\\b " }), {
+      ...DEFAULT_CONFIG,
+      locale: "ru_RU",
+      maxNameLength: 80,
+      promptExtra: "longer",
+      ticketPattern: "\\b([A-Z]+-\\d+)\\b",
+    });
   });
 
   it("redacts common secrets without changing clean text", () => {
@@ -51,6 +63,28 @@ describe("configuration and privacy", () => {
     assert.equal(result.redacted, true);
     assert.doesNotMatch(result.text, /AKIAIOSFODNN7EXAMPLE|sk-abc123def456ghi789jklmno/);
     assert.match(result.text, /REDACTED_PRIVATE_KEY/);
+  });
+});
+
+describe("ticket prefixes and name limits", () => {
+  it("extracts one unique ticket from user context only", () => {
+    assert.equal(extractTicketPrefix([
+      { role: "user", text: "Проверь ABC-123" },
+      { role: "assistant", text: "Также вижу XYZ-9" },
+    ], "\\b([A-Z]+-\\d+)\\b"), "ABC-123");
+    assert.equal(extractTicketPrefix([{ role: "user", text: "ABC-123 и XYZ-9" }], "\\b([A-Z]+-\\d+)\\b"), undefined);
+    assert.equal(extractTicketPrefix([{ role: "user", text: "ABC-123 /browse/ABC-123" }], "\\b([A-Z]+-\\d+)\\b"), "ABC-123");
+    assert.equal(compileTicketPattern("[") , undefined);
+  });
+
+  it("removes an untrusted model ticket and preserves a trusted one", () => {
+    assert.equal(withoutTicketPrefix("XYZ-9 Проверка", "\\b([A-Z]+-\\d+)\\b"), "Проверка");
+    assert.equal(withTicketPrefix("ABC-123 Проверка", "ABC-123"), "ABC-123 Проверка");
+  });
+
+  it("limits the complete saved name including its ticket prefix", () => {
+    assert.equal(limitNameLength(withTicketPrefix("fix auth", "ABC-123"), 10), "ABC-123 fi");
+    assert.equal(limitNameLength(withTicketPrefix("fix auth", "ABC-123"), 10).length, 10);
   });
 });
 
@@ -169,6 +203,9 @@ describe("rename markers", () => {
     });
     assert.deepEqual(parseRenameMarker({ name: "fallback", source: "fallback", timestamp: 2 }), {
       kind: "fallback", name: "fallback", source: "fallback", timestamp: 2,
+    });
+    assert.deepEqual(parseRenameMarker({ name: "ABC-123 title", source: "ai", ticketPrefix: "ABC-123", timestamp: 2 }), {
+      kind: "ai", name: "ABC-123 title", source: "ai", ticketPrefix: "ABC-123", timestamp: 2,
     });
     assert.deepEqual(parseRenameMarker({ event: "user_rename", name: "Manual" }), {
       kind: "user_rename", name: "Manual", timestamp: 0,

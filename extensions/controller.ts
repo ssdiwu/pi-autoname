@@ -7,19 +7,23 @@ export type NamingMode = "initial" | "periodic" | "manual";
 export interface NamingRequest {
   mode: NamingMode;
   currentName?: string;
+  ticketPrefix?: string;
   signal: AbortSignal;
 }
 
 export interface NamingResult {
   name: string;
   source: NamingSource;
+  ticketPrefix?: string;
 }
 
 export interface NamingControllerRuntime {
   now(): number;
   getConfig(): AutonameConfig;
   getCurrentName(): string | undefined;
-  appendMarker(marker: { name: string; source: NamingSource; timestamp: number } | { event: "user_rename"; name: string; timestamp: number }): void;
+  appendMarker(marker:
+    | { name: string; source: NamingSource; timestamp: number; ticketPrefix?: string }
+    | { event: "user_rename"; name: string; timestamp: number; ticketPrefix?: string }): void;
   setSessionName(name: string): void;
   generateName(request: NamingRequest): Promise<NamingResult | undefined>;
   debug(message: string): void;
@@ -43,6 +47,7 @@ export function createNamingController(runtime: NamingControllerRuntime): Naming
   let lastRenameTime = 0;
   let lastGeneratedName: string | undefined;
   let manualName: string | undefined;
+  let sessionTicketPrefix: string | undefined;
   let requestSequence = 0;
   let activeRequest: AbortController | undefined;
 
@@ -68,7 +73,13 @@ export function createNamingController(runtime: NamingControllerRuntime): Naming
       runtime.debug(`session name already current: ${name}`);
     }
 
-    runtime.appendMarker({ name, source: result.source, timestamp: now });
+    sessionTicketPrefix = result.ticketPrefix ?? sessionTicketPrefix;
+    runtime.appendMarker({
+      name,
+      source: result.source,
+      timestamp: now,
+      ...(sessionTicketPrefix ? { ticketPrefix: sessionTicketPrefix } : {}),
+    });
     state = result.source === "ai" ? "named" : "fallback";
     lastRenameTime = now;
     return { ...result, name };
@@ -87,6 +98,7 @@ export function createNamingController(runtime: NamingControllerRuntime): Naming
       const result = await runtime.generateName({
         mode,
         currentName: normalizeName(runtime.getCurrentName()),
+        ticketPrefix: sessionTicketPrefix,
         signal: controller.signal,
       });
       return result ? applyResult(result, sequence) : undefined;
@@ -105,10 +117,12 @@ export function createNamingController(runtime: NamingControllerRuntime): Naming
       const existing = normalizeName(existingName);
       lastGeneratedName = undefined;
       manualName = undefined;
+      sessionTicketPrefix = undefined;
       lastRenameTime = 0;
 
       if (existing && marker?.name === existing) {
         lastRenameTime = marker.timestamp || runtime.now();
+        sessionTicketPrefix = marker.ticketPrefix;
         if (marker.kind === "user_rename") {
           state = "named";
           manualName = existing;
@@ -132,7 +146,12 @@ export function createNamingController(runtime: NamingControllerRuntime): Naming
       lastGeneratedName = normalized;
       lastRenameTime = runtime.now();
       state = "named";
-      runtime.appendMarker({ event: "user_rename", name: normalized, timestamp: lastRenameTime });
+      runtime.appendMarker({
+        event: "user_rename",
+        name: normalized,
+        timestamp: lastRenameTime,
+        ...(sessionTicketPrefix ? { ticketPrefix: sessionTicketPrefix } : {}),
+      });
       runtime.debug(`manual session name observed: ${normalized}`);
     },
 

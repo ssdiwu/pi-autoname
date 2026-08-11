@@ -148,6 +148,17 @@ describe("naming language", () => {
       /Japanese/i,
     );
   });
+
+  it("uses configured locale before detected user language", () => {
+    assert.match(
+      getNamingLanguageInstruction(
+        [{ role: "user", text: "Переименуй эту сессию" }],
+        "en_US.UTF-8",
+        "ru_RU.UTF-8",
+      ),
+      /configured locale: ru_RU/i,
+    );
+  });
 });
 
 describe("dialogue extraction", () => {

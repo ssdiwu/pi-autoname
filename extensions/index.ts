@@ -184,7 +184,7 @@ function buildNamingPrompt(
   if (safeCurrentName?.redacted) debugLog("redacted sensitive session name before AI naming");
 
   const prompt = [
-    getNamingLanguageInstruction(parts, fallbackLocale),
+    getNamingLanguageInstruction(parts, fallbackLocale, config.locale),
     `Think privately, then output only one concise session-name label (up to ${config.maxNameLength ?? 30} characters).`,
     "The label must describe the current coding task, not repeat a conversational sentence.",
     "No punctuation, quotes, explanation, commas, or multiple clauses.",

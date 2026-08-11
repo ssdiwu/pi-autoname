@@ -100,7 +100,14 @@ function localeLanguageName(locale: string): string {
 }
 
 /** Builds an explicit language requirement for the naming model. */
-export function getNamingLanguageInstruction(parts: DialoguePart[], fallbackLocale?: string): string {
+export function getNamingLanguageInstruction(
+  parts: DialoguePart[],
+  fallbackLocale?: string,
+  localeOverride?: string,
+ ): string {
+  if (localeOverride?.trim()) {
+    return `Write the label in the language indicated by the configured locale: ${localeOverride.trim()}.`;
+  }
   const language = detectDominantUserLanguage(parts);
   if (language === "Chinese") return "Write the label in Chinese, preserving the Simplified or Traditional script used by the user. This language is determined from user messages only.";
   if (language) return `Write the label in ${language}. This language is determined from user messages only.`;

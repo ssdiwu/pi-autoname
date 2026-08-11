@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Configurable naming preferences: `locale`, `maxNameLength`, `promptExtra`, and `ticketPattern`.
+- Configurable naming preferences: `locale` (explicit language override), `maxNameLength`, `promptExtra`, and `ticketPattern`.
 
 ### Fixed
 

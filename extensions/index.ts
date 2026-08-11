@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import {
   DEFAULT_CONFIG,
   extractTicketPrefix,
-  getFirstDialogue,
+  getFirstUserMessage,
   getInitialDialogue,
   getNamingLanguageInstruction,
   getRecentDialogue,
@@ -289,10 +289,15 @@ async function generateName(
   if (parts.length === 0) return undefined;
 
   const config = loadConfig();
-  const initialUserContext = mode === "initial" ? getFirstDialogue(ctx.sessionManager.getBranch()).firstUser : undefined;
+  const maxNameLength = config.maxNameLength ?? 30;
+  const initialUserContext = mode === "initial" ? getFirstUserMessage(ctx.sessionManager.getBranch()) : undefined;
   const trustedTicket = ticketPrefix ?? (initialUserContext
     ? extractTicketPrefix([{ role: "user", text: initialUserContext }], config.ticketPattern)
     : undefined);
+  if (trustedTicket && trustedTicket.length > maxNameLength) {
+    debugLog("trusted ticket prefix exceeds maxNameLength");
+    return undefined;
+  }
   const prompt = buildNamingPrompt(parts, currentName, config.locale || fallbackLocale, config, trustedTicket);
   const startedAt = Date.now();
 
@@ -302,12 +307,12 @@ async function generateName(
 
     try {
       const response = await completeWithinBudget(model, prompt, ctx, signal, remainingBudget);
-      const name = response && extractCleanName(response, config.maxNameLength);
+      const name = response && extractCleanName(response, maxNameLength);
       if (name) {
         const baseName = withoutTicketPrefix(name, config.ticketPattern);
         if (!baseName) continue;
-        const finalName = limitNameLength(withTicketPrefix(baseName, trustedTicket), config.maxNameLength ?? 30);
-        if (isHighQualityName(finalName, config.maxNameLength)) {
+        const finalName = limitNameLength(withTicketPrefix(baseName, trustedTicket), maxNameLength, trustedTicket);
+        if (finalName && isHighQualityName(finalName, maxNameLength)) {
           return { name: finalName, source: "ai", ...(trustedTicket ? { ticketPrefix: trustedTicket } : {}) };
         }
       }
@@ -317,12 +322,12 @@ async function generateName(
     }
   }
 
-  const fallback = fallbackName(parts, config.maxNameLength);
+  const fallback = fallbackName(parts, maxNameLength);
   if (!fallback) return undefined;
   const baseName = withoutTicketPrefix(fallback.name, config.ticketPattern);
   if (!baseName) return undefined;
-  const finalName = limitNameLength(withTicketPrefix(baseName, trustedTicket), config.maxNameLength ?? 30);
-  return isHighQualityName(finalName, config.maxNameLength)
+  const finalName = limitNameLength(withTicketPrefix(baseName, trustedTicket), maxNameLength, trustedTicket);
+  return finalName && isHighQualityName(finalName, maxNameLength)
     ? { name: finalName, source: "fallback", ...(trustedTicket ? { ticketPrefix: trustedTicket } : {}) }
     : undefined;
 }

@@ -255,7 +255,12 @@ export function withTicketPrefix(name: string, ticketPrefix: string | undefined)
 }
 
 /** Enforce the configured limit on the complete saved name, including its ticket prefix. */
-export function limitNameLength(name: string, maxNameLength: number): string {
+export function limitNameLength(
+  name: string,
+  maxNameLength: number,
+  requiredPrefix?: string,
+ ): string | undefined {
+  if (requiredPrefix && requiredPrefix.length > maxNameLength) return undefined;
   return name.slice(0, maxNameLength).trim();
 }
 
@@ -370,6 +375,17 @@ export function getFirstDialogue(branch: any[]) {
 
   return { firstUser, firstAssistant };
 }
+
+/** Return the first real user message, excluding compaction summaries. */
+export function getFirstUserMessage(branch: any[]): string | undefined {
+  for (const entry of branch) {
+    if (entry?.type !== "message" || entry.message?.role !== "user") continue;
+    const text = blockText(entry.message.content);
+    if (text) return text;
+  }
+  return undefined;
+}
+
 
 export function getRecentDialogue(branch: any[], maxMessages = 6): DialoguePart[] {
   const items: DialoguePart[] = [];

@@ -14,6 +14,7 @@ import {
   withoutTicketPrefix,
   withTicketPrefix,
   getFirstDialogue,
+  getFirstUserMessage,
   getInitialDialogue,
   getNamingLanguageInstruction,
   getRecentDialogue,
@@ -85,6 +86,7 @@ describe("ticket prefixes and name limits", () => {
   it("limits the complete saved name including its ticket prefix", () => {
     assert.equal(limitNameLength(withTicketPrefix("fix auth", "ABC-123"), 10), "ABC-123 fi");
     assert.equal(limitNameLength(withTicketPrefix("fix auth", "ABC-123"), 10).length, 10);
+    assert.equal(limitNameLength(withTicketPrefix("fix auth", "ABC-123"), 3, "ABC-123"), undefined);
   });
 });
 
@@ -180,6 +182,13 @@ describe("dialogue extraction", () => {
       { type: "compaction", summary: [{ type: "text", text: "older task" }] },
       { type: "message", message: { role: "assistant", content: "reply" } },
     ]), { firstUser: "older task", firstAssistant: "reply" });
+  });
+
+  it("keeps compaction summaries out of first-user ticket extraction", () => {
+    assert.equal(getFirstUserMessage([
+      { type: "compaction", summary: [{ type: "text", text: "ABC-123 older task" }] },
+      { type: "message", message: { role: "user", content: "real request without ticket" } },
+    ]), "real request without ticket");
   });
 
   it("scans the tail only while preserving chronological recent dialogue", () => {

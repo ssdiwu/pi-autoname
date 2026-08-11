@@ -81,7 +81,7 @@ This tries models in order: `MiniMax-M2.7` → `mimo-v2-omni` → session model.
 
 ### Configurable naming preferences
 
-`locale` explicitly overrides language detection when set. When empty, pi-autoname uses the dominant natural language in user-authored text and falls back to the active Pi locale only when no natural language is detectable. `promptExtra` is appended as a user preference, and `maxNameLength` applies to the complete saved name, including a trusted ticket prefix.
+`locale` explicitly overrides language detection when set. When empty, pi-autoname uses the dominant natural language in user-authored text and falls back to the active Pi locale only when no natural language is detectable. `promptExtra` is appended as a user preference, and `maxNameLength` applies to the complete saved name, including a trusted ticket prefix. If the trusted ticket alone exceeds the limit, naming is skipped rather than truncating the ticket.
 
 With `ticketPattern`, pi-autoname scans only the first user message. It pins a ticket only when there is exactly one unique match; assistant replies, later dialogue, and existing session names are never ticket sources. The pinned ticket is persisted between renames. If no trusted ticket exists, a ticket-like prefix returned by the model is removed before saving.
 

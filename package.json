@@ -1,6 +1,6 @@
 {
   "name": "pi-autoname",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "AI-powered session naming for Pi — generate meaningful, semantic session names via LLM",
   "type": "module",
   "keywords": [
@@ -37,12 +37,12 @@
     "prepublishOnly": "npm run check:compat:min"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": ">=0.79.10 <0.82.0",
-    "@earendil-works/pi-coding-agent": ">=0.79.10 <0.82.0"
+    "@earendil-works/pi-ai": ">=0.80.10",
+    "@earendil-works/pi-coding-agent": ">=0.80.10"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.79.10",
-    "@earendil-works/pi-coding-agent": "0.79.10",
+    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.80.10",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   },

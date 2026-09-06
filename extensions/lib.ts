@@ -136,6 +136,43 @@ export const DEFAULT_CONFIG: Required<AutonameConfig> = {
   respectManualName: false,
 };
 
+/** Thinking levels accepted as a `provider/modelId:level` suffix. */
+export const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type NamingThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+export interface ModelRef {
+  provider: string;
+  id: string;
+  thinking?: NamingThinkingLevel;
+}
+
+const THINKING_LEVEL_SET = new Set<string>(THINKING_LEVELS);
+
+/**
+ * Parse `provider/modelId` or `provider/modelId:thinking`.
+ * Unknown `:` suffixes stay part of the model id so ids that contain a colon
+ * keep resolving.
+ */
+export function parseModelRef(modelName: string): ModelRef | undefined {
+  const trimmed = modelName.trim();
+  const separator = trimmed.indexOf("/");
+  if (separator <= 0 || separator === trimmed.length - 1) return undefined;
+
+  const provider = trimmed.slice(0, separator);
+  let id = trimmed.slice(separator + 1);
+  let thinking: NamingThinkingLevel | undefined;
+  const colon = id.lastIndexOf(":");
+  if (colon > 0) {
+    const suffix = id.slice(colon + 1);
+    if (THINKING_LEVEL_SET.has(suffix)) {
+      thinking = suffix as NamingThinkingLevel;
+      id = id.slice(0, colon);
+    }
+  }
+  if (!provider || !id) return undefined;
+  return thinking ? { provider, id, thinking } : { provider, id };
+}
+
 export function normalizeConfig(input: unknown): AutonameConfig {
   if (!input || typeof input !== "object") return { ...DEFAULT_CONFIG };
 

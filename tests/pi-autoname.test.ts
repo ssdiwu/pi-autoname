@@ -14,6 +14,7 @@ import {
   getRecentDialogue,
   isHighQualityName,
   normalizeConfig,
+  parseModelRef,
   parseRenameMarker,
   redactSensitiveText,
   smartFallbackName,
@@ -32,6 +33,21 @@ describe("configuration and privacy", () => {
     assert.equal(normalizeConfig({ cooldownMinutes: Number.NaN }).cooldownMinutes, DEFAULT_CONFIG.cooldownMinutes);
     assert.equal(normalizeConfig({ fallbackModels: "bad" }).fallbackModels?.length, 0);
     assert.equal(normalizeConfig({ respectManualName: true }).respectManualName, true);
+  });
+
+  it("parses provider/modelId and an optional thinking suffix", () => {
+    assert.deepEqual(parseModelRef("xai/grok-4.6"), { provider: "xai", id: "grok-4.6" });
+    assert.deepEqual(parseModelRef(" xai/grok-4.6:low "), { provider: "xai", id: "grok-4.6", thinking: "low" });
+    assert.deepEqual(parseModelRef("iv/deepseek-v4-flash:high"), {
+      provider: "iv",
+      id: "deepseek-v4-flash",
+      thinking: "high",
+    });
+    assert.deepEqual(parseModelRef("openai/gpt-5:not-a-level"), { provider: "openai", id: "gpt-5:not-a-level" });
+    assert.equal(parseModelRef(""), undefined);
+    assert.equal(parseModelRef("grok-4.6"), undefined);
+    assert.equal(parseModelRef("xai/"), undefined);
+    assert.equal(parseModelRef("/grok-4.6"), undefined);
   });
 
   it("redacts common secrets without changing clean text", () => {

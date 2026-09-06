@@ -50,8 +50,8 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Set to `false` to disable AI naming |
-| `model` | string | _(session model)_ | Primary model (`provider/modelId`). Empty = use session model |
-| `fallbackModels` | string[] | `[]` | Additional models to try if primary fails |
+| `model` | string | _(session model)_ | Primary model (`provider/modelId` or `provider/modelId:thinking`). Empty = use session model |
+| `fallbackModels` | string[] | `[]` | Additional models to try if primary fails. Each entry accepts the same `:thinking` suffix |
 | `cooldownMinutes` | number | `10` | Minutes between periodic re-names |
 | `debug` | boolean | `false` | Enable debug logging |
 | `respectManualName` | boolean | `false` | When `false` (default), a `/name` change gets one cooldown window before automatic naming resumes. Set to `true` to keep a user-issued `/name` until `/autoname` is explicitly run. |
@@ -61,15 +61,17 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 ```json
 {
   "enabled": true,
-  "model": "minimax-cn/MiniMax-M2.7",
+  "model": "xai/grok-4.6:low",
   "fallbackModels": [
-    "xiaomi-token-plan-cn/mimo-v2-omni"
+    "minimax-cn/MiniMax-M2.7"
   ],
   "cooldownMinutes": 10
 }
 ```
 
-This tries models in order: `MiniMax-M2.7` → `mimo-v2-omni` → session model.
+This tries models in order: `grok-4.6` at thinking level `low` → `MiniMax-M2.7` → session model.
+
+The optional `:thinking` suffix is one of `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. It is passed through Pi's unified `reasoning` option so models that cannot turn thinking off (for example Grok 4.6) can still run naming at a cheap level. Unknown suffixes stay part of the model id.
 
 ## 🏗️ How it works
 

@@ -5,7 +5,7 @@
  * name after a cooldown, and provides /autoname for an explicit refresh.
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { complete } from "@earendil-works/pi-ai/compat";
+import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -17,10 +17,12 @@ import {
   getRecentDialogue,
   isHighQualityName,
   normalizeConfig,
+  parseModelRef,
   parseRenameMarker,
   redactSensitiveText,
   smartFallbackName,
   type AutonameConfig,
+  type NamingThinkingLevel,
   type DialoguePart,
   type RenameMarker,
 } from "./lib.ts";
@@ -79,28 +81,30 @@ function loadConfig(): AutonameConfig {
   return config;
 }
 
-function resolveModel(modelName: string, ctx: ExtensionContext) {
-  const separator = modelName.indexOf("/");
-  if (separator <= 0 || separator === modelName.length - 1) return undefined;
-  return ctx.modelRegistry.find(modelName.slice(0, separator), modelName.slice(separator + 1));
+function resolveConfiguredModel(modelName: string, ctx: ExtensionContext) {
+  const ref = parseModelRef(modelName);
+  if (!ref) return undefined;
+  const model = ctx.modelRegistry.find(ref.provider, ref.id);
+  if (!model) return undefined;
+  return { model, thinking: ref.thinking };
 }
 
-function buildModelChain(config: AutonameConfig, ctx: ExtensionContext): unknown[] {
-  const models: unknown[] = [];
+function buildModelChain(config: AutonameConfig, ctx: ExtensionContext) {
+  const models: Array<{ model: any; thinking?: NamingThinkingLevel }> = [];
   const seen = new Set<string>();
 
-  const add = (model: any, source: string) => {
-    if (!model) return;
-    const key = `${model.provider}/${model.id}`;
+  const add = (entry: { model: any; thinking?: NamingThinkingLevel } | undefined, source: string) => {
+    if (!entry?.model) return;
+    const key = `${entry.model.provider}/${entry.model.id}`;
     if (seen.has(key)) return;
     seen.add(key);
-    models.push(model);
-    debugLog(`added ${source} model: ${key}`);
+    models.push(entry);
+    debugLog(`added ${source} model: ${key}${entry.thinking ? `:${entry.thinking}` : ""}`);
   };
 
-  if (config.model) add(resolveModel(config.model, ctx), "configured");
-  for (const fallback of config.fallbackModels ?? []) add(resolveModel(fallback, ctx), "fallback");
-  add(ctx.model, "session");
+  if (config.model) add(resolveConfiguredModel(config.model, ctx), "configured");
+  for (const fallback of config.fallbackModels ?? []) add(resolveConfiguredModel(fallback, ctx), "fallback");
+  add(ctx.model ? { model: ctx.model } : undefined, "session");
   return models;
 }
 
@@ -216,6 +220,7 @@ async function completeWithinBudget(
   ctx: ExtensionContext,
   signal: AbortSignal,
   remainingBudgetMs: number,
+  thinking?: NamingThinkingLevel,
 ): Promise<any | undefined> {
   const deadline = Date.now() + remainingBudgetMs;
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
@@ -234,13 +239,20 @@ async function completeWithinBudget(
   else signal.addEventListener("abort", abort, { once: true });
 
   try {
-    return await complete(
+    return await completeSimple(
       model,
       {
         systemPrompt: "You produce concise semantic labels for coding sessions.",
         messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
       },
-      { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, maxTokens: MAX_NAME_TOKENS, signal: controller.signal },
+      {
+        apiKey: auth.apiKey,
+        headers: auth.headers,
+        env: auth.env,
+        maxTokens: MAX_NAME_TOKENS,
+        signal: controller.signal,
+        ...(thinking ? { reasoning: thinking } : {}),
+      },
     );
   } finally {
     clearTimeout(timeout);
@@ -278,12 +290,12 @@ async function generateName(
   const prompt = buildNamingPrompt(parts, currentName, fallbackLocale);
   const startedAt = Date.now();
 
-  for (const model of buildModelChain(config, ctx)) {
+  for (const { model, thinking } of buildModelChain(config, ctx)) {
     const remainingBudget = AI_TOTAL_BUDGET_MS - (Date.now() - startedAt);
     if (remainingBudget <= 0 || signal.aborted) break;
 
     try {
-      const response = await completeWithinBudget(model, prompt, ctx, signal, remainingBudget);
+      const response = await completeWithinBudget(model, prompt, ctx, signal, remainingBudget, thinking);
       const name = response && extractCleanName(response);
       if (name) return { name, source: "ai" };
     } catch (error) {

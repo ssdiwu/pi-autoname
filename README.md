@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>AI-powered semantic session naming for Pi.</strong>
+  <strong>AI-powered semantic session naming for Pi, with an animated terminal-title progress marker.</strong>
 </p>
 
 <p align="center">
@@ -18,6 +18,8 @@
 
 | Scenario | Behavior |
 |---|---|
+| Agent or naming model is working | Animates the terminal title: `π - ⠋ - Session title` |
+| Work finishes or is cancelled | Removes the marker: `π - Session title` |
 | First dialogue settles | Automatically generates a semantic session name |
 | Conversation continues | Silently considers a rename every 10 minutes (configurable) |
 | Session topic drifts | Updates only when the current name no longer fits |
@@ -32,6 +34,21 @@ pi install npm:pi-autoname
 
 **Works out of the box.** No configuration needed — uses your current session's model by default.
 
+### Animated terminal title
+
+```text
+Working:  π - ⠋ - Database retries
+          π - ⠙ - Database retries
+          π - ⠹ - Database retries
+Idle:     π - Database retries
+```
+
+The marker cycles through ten Braille frames every 120 ms. It starts during agent preparation and stays active through reasoning, streaming, tool calls, retries, and queued follow-ups until `agent_settled`. Background naming and `/autoname` model calls are also tracked, independently of the main agent. Cancellation of naming releases its marker immediately; shutdown, session replacement, and reload clear timers and reject stale updates.
+
+The displayed title is the session name, or the working-directory basename until one is available. The animation only updates the terminal title through `ctx.ui.setTitle()`; it never renames the session, writes animation frames into history, or makes additional model requests. Manual `/name` changes update the displayed title immediately. Control characters are removed before sending a title to the terminal.
+
+This is **TUI-only**: print, JSON, and RPC modes never emit spinner title updates. Set `"titleSpinner": false` and run `/reload` to leave terminal titles entirely to Pi or another extension. The spinner remains available when `"enabled": false` disables AI naming. Avoid running a second title-owning extension alongside it. The terminal must accept application-provided titles; a terminal-side fixed tab-title override can hide the animation.
+
 ## ⚙️ Configuration
 
 Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`:
@@ -39,6 +56,7 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 ```json
 {
   "enabled": true,
+  "titleSpinner": true,
   "model": "",
   "fallbackModels": [],
   "language": "auto",
@@ -52,6 +70,7 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Set to `false` to disable AI naming |
+| `titleSpinner` | boolean | `true` | Animate the terminal title in TUI mode. Independent of AI naming; apply changes with `/reload`. |
 | `model` | string | _(session model)_ | Primary model (`provider/modelId` or `provider/modelId:thinking`). Empty = use session model |
 | `fallbackModels` | string[] | `[]` | Additional models to try if primary fails; the same `:thinking` suffix is supported |
 | `language` | string | `"auto"` | BCP 47 locale such as `zh-CN`, `zh-TW`, or `en` for AI names; explicit values override detection and the Pi locale |
@@ -176,7 +195,7 @@ The repository has no development dependency. With Node.js 22.6 or later (Node.j
 npm test
 ```
 
-Pi provides the two declared peer dependencies at extension runtime. The current host verification baseline is Pi **1.3.0**. Naming calls use `ctx.modelRegistry.streamSimple().result()` so Pi resolves provider authentication, including providers that do not require an API key.
+Pi provides the two declared peer dependencies at extension runtime. The current host verification baseline is Pi **1.4.0** (Node.js **24.21.0**). Naming calls use `ctx.modelRegistry.streamSimple().result()` so Pi resolves provider authentication, including providers that do not require an API key.
 
 An additional offline check uses the installed Pi loader, runner, session manager, and model runtime with an in-memory test provider:
 
@@ -184,7 +203,13 @@ An additional offline check uses the installed Pi loader, runner, session manage
 PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-host-smoke.mjs
 ```
 
-This checks automatic/manual naming, reload state, redaction, and failure fallback without using personal credentials or external models. See [compatibility evidence and limits](doc/Pi版本兼容性与影响分析.md).
+This checks automatic/manual naming, reload state, redaction, failure fallback, TUI animation, final settlement, shutdown cleanup, and RPC silence without using personal credentials or external models. On Linux/macOS, an additional Python 3 PTY test exercises real terminal-title output, `/name`, `/reload`, and Escape cancellation:
+
+```bash
+PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" python3 tests/pi-tui-smoke.py
+```
+
+Set `PI_HOST_ROOT` to the actual installed package directory if Pi is managed outside global npm. These are offline automated tests, not a live-model or graphical-terminal acceptance test. See [compatibility evidence and limits](doc/Pi版本兼容性与影响分析.md).
 
 AI replies use the first nonempty text line, or the last nonempty thinking line when no text was returned, and share the same 30-character limit as local fallback labels. The quality gate checks length and basic sentence patterns; it cannot guarantee that a model’s chosen line is semantically useful.
 

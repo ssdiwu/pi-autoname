@@ -1,6 +1,7 @@
 // Optional offline smoke test against an installed Pi host; no user config or models are used.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -13,6 +14,13 @@ const oldHome = process.env.HOME;
 process.env.HOME = home;
 process.env.JITI_FS_CACHE = "false";
 const load = path => import(pathToFileURL(join(host, path)).href);
+// npm can hoist the host's peers beside it, rather than inside its node_modules.
+const hostRequire = createRequire(join(host, "package.json"));
+const aiDist = hostRequire.resolve.paths("@earendil-works/pi-ai")
+  .map(path => join(path, "@earendil-works/pi-ai/dist"))
+  .find(path => existsSync(join(path, "providers/faux.js")));
+if (!aiDist) throw new Error("Cannot locate the host's pi-ai package");
+const loadAI = path => import(pathToFileURL(join(aiDist, path)).href);
 let runner;
 try {
   const { ModelRuntime } = await load("dist/core/model-runtime.js");
@@ -20,8 +28,8 @@ try {
   const { SessionManager } = await load("dist/core/session-manager.js");
   const { ExtensionRunner } = await load("dist/core/extensions/runner.js");
   const { loadExtensions } = await load("dist/core/extensions/loader.js");
-  const { InMemoryCredentialStore } = await load("node_modules/@earendil-works/pi-ai/dist/auth/credential-store.js");
-  const { fauxProvider, fauxAssistantMessage } = await load("node_modules/@earendil-works/pi-ai/dist/providers/faux.js");
+  const { InMemoryCredentialStore } = await loadAI("auth/credential-store.js");
+  const { fauxProvider, fauxAssistantMessage } = await loadAI("providers/faux.js");
   const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
   const faux = fauxProvider({ provider: "autoname-offline-fixture", tokensPerSecond: Infinity });
   runtime.registerNativeProvider(faux.provider);
@@ -52,11 +60,13 @@ try {
   user("修复数据库连接");
   assistant("开始检查");
   const errors = [];
-  const start = async () => {
+  const titles = [];
+  const start = async (mode = "tui") => {
     const loaded = await loadExtensions([join(root, "index.ts")], root);
     assert.deepEqual(loaded.errors, []);
     const current = new ExtensionRunner(loaded.extensions, loaded.runtime, root, session, registry);
     current.onError(error => errors.push(error));
+    current.setUIContext({ notify() {}, setTitle: title => titles.push(title) }, mode);
     current.bindCore({
       appendEntry: (type, data) => session.appendCustomEntry(type, data),
       getSessionName: () => session.getSessionName(),
@@ -134,8 +144,29 @@ try {
   await runner.getCommand("autoname").handler("", runner.createCommandContext());
   assert.equal(session.getSessionName(), "虚拟模型命名验证");
   assert.equal(routes, 1);
+  assert.equal(titles.at(-1), "π - 虚拟模型命名验证");
+  assert.ok(titles.some(title => title.startsWith("π - ⠋ - ")), "naming calls must animate the title");
+
+  writeConfig({ enabled: false });
+  await runner.emit({ type: "agent_start" });
+  assert.equal(titles.at(-1), "π - ⠋ - 虚拟模型命名验证");
+  await runner.emit({ type: "agent_end", messages: [] });
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.ok(titles.includes("π - ⠙ - 虚拟模型命名验证"), "agent_end must not stop subsequent animation frames");
+  assert.match(titles.at(-1), /^π - [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] - /);
+  await runner.emit({ type: "agent_settled", messages: [] });
+  assert.equal(titles.at(-1), "π - 虚拟模型命名验证");
+  await runner.emit({ type: "agent_start" });
+  await runner.emit({ type: "session_shutdown", reason: "reload" });
+  const count = titles.length;
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(titles.length, count, "shutdown must stop the animation");
+  runner = await start("rpc");
+  await runner.emit({ type: "agent_start" });
+  await runner.emit({ type: "agent_settled", messages: [] });
+  assert.equal(titles.length, count, "RPC must not emit title updates");
   assert.deepEqual(errors, []);
-  console.log("PASS: actual Pi loader, runner, in-memory session and keyless ModelRuntime: automatic, manual, reload, redaction, failure fallback, secret fallback rejection, native virtual-model routing, explicit language, thinking suffix, multiline/reasoning-only extraction, bounded local fallback");
+  console.log("PASS: actual Pi loader, runner, in-memory session and keyless ModelRuntime: automatic, manual, reload, redaction, failure fallback, secret fallback rejection, native virtual-model routing, explicit language, thinking suffix, multiline/reasoning-only extraction, bounded local fallback, TUI title animation/settlement/shutdown, RPC silence");
 } finally {
   await runner?.emit({ type: "session_shutdown" });
   if (oldHome === undefined) delete process.env.HOME;

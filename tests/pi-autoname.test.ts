@@ -36,6 +36,15 @@ describe("configuration and privacy", () => {
     assert.equal(normalizeConfig({ respectManualName: true }).respectManualName, true);
   });
 
+  it("enables the title spinner by default with an independent boolean opt-out", () => {
+    assert.equal(normalizeConfig({}).titleSpinner, true);
+    assert.equal(normalizeConfig({ enabled: false }).titleSpinner, true);
+    assert.equal(normalizeConfig({ titleSpinner: false }).titleSpinner, false);
+    for (const titleSpinner of [null, 0, "false", {}]) {
+      assert.equal(normalizeConfig({ titleSpinner }).titleSpinner, true);
+    }
+  });
+
   it("normalizes explicit language locales and rejects invalid or injected values", () => {
     assert.equal(normalizeConfig({ language: " zh-cn " }).language, "zh-CN");
     assert.equal(normalizeConfig({ language: "zh-TW" }).language, "zh-TW");

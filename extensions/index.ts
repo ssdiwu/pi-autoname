@@ -32,6 +32,7 @@ import {
   type NamingResult,
 } from "./controller.ts";
 import type { NamingThinkingLevel } from "./lib.ts";
+import { createTitleSpinner } from "./title-spinner.ts";
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-autoname.json");
 const STATE_ENTRY_TYPE = "pi-autoname-state";
@@ -295,6 +296,7 @@ async function generateName(
 export default function extension(pi: ExtensionAPI): void {
   loadConfig();
   let controller: ReturnType<typeof createNamingController> | undefined;
+  let titleSpinner: ReturnType<typeof createTitleSpinner> | undefined;
 
   const requireController = () => {
     if (!controller) throw new Error("pi-autoname session has not started");
@@ -303,13 +305,28 @@ export default function extension(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     controller?.shutdown();
+    titleSpinner?.shutdown();
+    // hasUI also includes RPC clients: terminal animation is strictly TUI-only.
+    const spinner = ctx.mode === "tui" && loadConfig().titleSpinner !== false
+      ? createTitleSpinner({ cwd: ctx.cwd, getSessionName: () => pi.getSessionName(), setTitle: (title) => ctx.ui.setTitle(title) })
+      : undefined;
+    titleSpinner = spinner;
+    spinner?.refreshAfterHost();
     controller = createNamingController({
       now: Date.now,
       getConfig: loadConfig,
       getCurrentName: () => pi.getSessionName(),
       appendMarker: (marker) => pi.appendEntry(STATE_ENTRY_TYPE, marker),
       setSessionName: (name) => pi.setSessionName(name),
-      generateName: ({ mode, currentName, signal }) => generateName(ctx, mode, currentName, signal, getI18nLocale(pi)),
+      generateName: async ({ mode, currentName, signal }) => {
+        // Capture this session's spinner, never a replacement created by /reload.
+        const finish = spinner?.trackNaming(signal);
+        try {
+          return await generateName(ctx, mode, currentName, signal, getI18nLocale(pi));
+        } finally {
+          finish?.();
+        }
+      },
       debug: debugLog,
     });
     controller.restore(getLastRenameMarker(ctx), pi.getSessionName());
@@ -327,9 +344,21 @@ export default function extension(pi: ExtensionAPI): void {
 
   pi.on("session_info_changed", async (event) => {
     controller?.handleSessionNameChange(event.name);
+    titleSpinner?.refresh();
+  });
+
+  pi.on("before_agent_start", () => {
+    titleSpinner?.setAgentBusy(true);
+  });
+
+  pi.on("agent_start", () => {
+    titleSpinner?.setAgentBusy(true);
   });
 
   pi.on("agent_settled", () => {
+    // agent_end is not final: retries, tools, compaction and queued follow-ups
+    // may still be running. Only settlement clears the agent's busy state.
+    titleSpinner?.setAgentBusy(false);
     // Naming is best-effort background work. Do not hold Pi's settled
     // lifecycle while a provider call is in flight.
     void controller?.handleSettled();
@@ -338,6 +367,8 @@ export default function extension(pi: ExtensionAPI): void {
   pi.on("session_shutdown", async () => {
     controller?.shutdown();
     controller = undefined;
+    titleSpinner?.shutdown();
+    titleSpinner = undefined;
   });
 
   pi.registerCommand("autoname", {

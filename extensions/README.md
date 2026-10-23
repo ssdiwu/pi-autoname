@@ -8,6 +8,7 @@ pi-autoname 的核心逻辑所在。
 |------|------|
 | `index.ts` | Pi Extension（扩展）入口：注册生命周期事件、`/autoname` 命令、宿主 `modelRegistry.streamSimple().result()` 模型调用、命名请求总预算，以及当前 session JSONL（会话日志）的调试诊断 |
 | `lib.ts` | 纯工具函数：用户消息语言检测、配置规范化、敏感信息脱敏、名称质量检查、尾部对话提取、降级命名 |
+| `title-spinner.ts` | TUI-only `π - marker - title` animation; independent agent/naming activity, safe title formatting, cancellation and timer cleanup |
 
 ## 关键导出
 
@@ -20,8 +21,9 @@ export default function extension(pi: ExtensionAPI): void
 注册以下能力：
 - `session_start`（会话启动）— 恢复命名状态，并在 debug 模式记录 session JSONL 诊断
 - `session_info_changed`（会话名称变更）— 立即识别 `/name`，写入手工名称 marker
-- `agent_settled`（代理完全稳定）— 后台触发首次或周期命名，不阻塞主代理收口
-- `session_shutdown`（会话关闭）— 取消未完成命名请求
+- `before_agent_start` / `agent_start` — start the terminal-title marker in TUI mode
+- `agent_settled`（代理完全稳定）— 后台触发首次或周期命名，不阻塞主代理收口；clear agent activity while independently tracking any naming request
+- `session_shutdown`（会话关闭）— 取消未完成命名请求，dispose the title spinner and its abort listeners/timers
 - `/autoname`（手动命令）— 显式触发一次命名，即使 `respectManualName` 已启用
 
 命名导出：
@@ -61,3 +63,5 @@ npm test
 - `../tests/extension-lifecycle.test.ts` — `controller.ts` 生命周期、冷却与取消
 - `../tests/extension-integration.test.ts` — `index.ts` 入口、最终请求脱敏、无 Key 调用、降级及恢复
 - `../tests/pi-host-smoke.mjs` — 本机 Pi 加载器、运行时与内存会话的离线检查，运行方法见 `../doc/Pi版本兼容性与影响分析.md`
+- `../tests/title-spinner.test.ts` — title animation, overlapping activity, cancellation and stale callbacks
+- `../tests/pi-tui-smoke.py` — actual offline TUI title output and `/reload`/Escape lifecycle

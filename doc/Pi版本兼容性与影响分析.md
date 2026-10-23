@@ -2,7 +2,23 @@
 
 > 记录本扩展实际采用的宿主接口与验证边界，不能仅凭版本号或导入成功认定完整兼容。
 
-## 当前验证基线
+## Terminal-title verification — 2026-10-22
+
+The terminal-title feature is checked against Pi **1.4.0** and Node.js **24.21.0**. The earlier naming baseline below remains historical evidence, not a claim that every host version has been retested.
+
+The new title marker uses only public `ctx.mode`, `ctx.cwd`, `ctx.ui.setTitle()`, session-name APIs and lifecycle events. It starts at `before_agent_start` / `agent_start`, stays active across low-level `agent_end`, and clears agent activity at `agent_settled`. Naming requests are tracked separately, with abort listeners and finally cleanup. `session_shutdown` disposes the session-scoped spinner; late results cannot update a replacement runtime. Animation never writes session metadata and never runs in RPC/JSON/print modes. `titleSpinner: false` disables title ownership after `/reload`, independently of AI naming.
+
+Verification commands:
+
+```bash
+npm test
+PI_HOST_ROOT=/path/to/@earendil-works/pi-coding-agent node tests/pi-host-smoke.mjs
+PI_HOST_ROOT=/path/to/@earendil-works/pi-coding-agent python3 tests/pi-tui-smoke.py
+```
+
+The PTY check runs the real interactive CLI with an offline faux provider and verifies OSC title output, normal completion, `/name`, `/reload`, Escape cancellation and shutdown. These tests do not exercise external models or prove visual rendering in Ghostty or any other graphical terminal. Existing model/reasoning selection and manual-name behavior are retained without a configuration migration.
+
+## 历史验证基线
 
 - 本机 Pi / pi-ai：`1.3.0`；Node.js：`22.22.3`。
 - pi-autoname：`0.7.0`；扩展版本独立于 Pi 版本。

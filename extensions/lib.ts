@@ -114,6 +114,8 @@ export function getNamingLanguageInstruction(parts: DialoguePart[], fallbackLoca
 
 export interface AutonameConfig {
   enabled?: boolean;
+  /** Animate the TUI terminal title while the agent or naming model is working. */
+  titleSpinner?: boolean;
   model?: string;
   fallbackModels?: string[];
   /** BCP 47 locale for AI labels; auto keeps user-message detection. */
@@ -145,6 +147,7 @@ export interface AutonameConfig {
 
 export const DEFAULT_CONFIG: Required<AutonameConfig> = {
   enabled: true,
+  titleSpinner: true,
   model: "",
   fallbackModels: [],
   language: "auto",
@@ -217,6 +220,7 @@ export function normalizeConfig(input: unknown): AutonameConfig {
 
   return {
     enabled: typeof raw.enabled === "boolean" ? raw.enabled : DEFAULT_CONFIG.enabled,
+    titleSpinner: typeof raw.titleSpinner === "boolean" ? raw.titleSpinner : DEFAULT_CONFIG.titleSpinner,
     model: typeof raw.model === "string" ? raw.model.trim() : DEFAULT_CONFIG.model,
     language: normalizeLanguage(raw.language),
     fallbackModels: Array.isArray(raw.fallbackModels)

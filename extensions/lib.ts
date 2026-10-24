@@ -298,8 +298,8 @@ export function limitNameLength(text: string): string {
 
 /** A persisted pi-autoname state marker — one of three flavors. */
 export type RenameMarker =
-  | { kind: "ai"; name: string; source: "ai"; timestamp: number }
-  | { kind: "fallback"; name: string; source: "fallback"; timestamp: number }
+  | { kind: "ai"; name: string; source: "ai"; timestamp: number; provisional?: boolean }
+  | { kind: "fallback"; name: string; source: "fallback"; timestamp: number; provisional?: boolean }
   | { kind: "user_rename"; name: string; timestamp: number };
 
 /**
@@ -330,6 +330,7 @@ export function parseRenameMarker(data: unknown): RenameMarker | undefined {
       name: obj.name,
       source: "ai",
       timestamp: typeof obj.timestamp === "number" ? obj.timestamp : 0,
+      ...(obj.provisional === true ? { provisional: true } : {}),
     };
   }
   if (obj.source === "fallback" && typeof obj.name === "string") {
@@ -338,6 +339,7 @@ export function parseRenameMarker(data: unknown): RenameMarker | undefined {
       name: obj.name,
       source: "fallback",
       timestamp: typeof obj.timestamp === "number" ? obj.timestamp : 0,
+      ...(obj.provisional === true ? { provisional: true } : {}),
     };
   }
 

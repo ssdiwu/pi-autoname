@@ -331,6 +331,18 @@ describe("custom message extraction", () => {
 });
 
 describe("rename markers", () => {
+  it("preserves only an explicit provisional flag on generated markers", () => {
+    for (const source of ["ai", "fallback"]) {
+      for (const provisional of [true, false, "true", undefined]) {
+        const marker = parseRenameMarker({ name: "Early title", source, timestamp: 1, provisional });
+        assert.deepEqual(marker, { kind: source, name: "Early title", source, timestamp: 1, ...(provisional === true ? { provisional: true } : {}) });
+      }
+    }
+    assert.deepEqual(parseRenameMarker({ event: "user_rename", name: "Manual", provisional: true }), {
+      kind: "user_rename", name: "Manual", timestamp: 0,
+    });
+  });
+
   it("parses generated and manual rename markers defensively", () => {
     assert.deepEqual(parseRenameMarker({ name: "标题", source: "ai", timestamp: 1 }), {
       kind: "ai", name: "标题", source: "ai", timestamp: 1,

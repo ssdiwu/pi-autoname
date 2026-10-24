@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Generate an initial session name in the background from the first textual request/response pair, before long-running tools finish. Refine it once using completed-task context at settlement, then retain the normal rename cooldown. Pending refinement survives reload; manual renames cancel background naming and reject stale results.
+
 ### Added
 
 - Explicit `language` locale for AI names, with `auto` as the default and invalid locales safely returning to automatic detection. Addresses #4.
@@ -14,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Apply the normal cooldown after a completed fallback naming pass, including after reload, rather than retrying the entire model chain after every turn.
+- Honor `/name` even when it repeats the generated title; only the extension's own name-change echo is ignored, including when event delivery is delayed.
 - Treat not-yet-created session files as normal, while retaining safe diagnostics for other IO errors. Adapted from @LoveSnowEx’s PR #3.
 - Extract a concise line from multiline model replies and keep AI/local fallback names within the same quality limit. Adapted from @git-geeky’s PR #2.
 

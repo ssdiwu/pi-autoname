@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  Automatically name sessions after the first dialogue, periodically re-name as the conversation evolves, and regenerate on demand with <code>/autoname</code>.
+  Name sessions from the first request/response pair, refine when the task settles, and regenerate on demand with <code>/autoname</code>.
 </p>
 
 <p align="center">
@@ -18,7 +18,8 @@
 
 | Scenario | Behavior |
 |---|---|
-| First dialogue settles | Automatically generates a semantic session name |
+| First textual request/response pair arrives | Generates an initial name while the task continues |
+| First task settles | Reconsiders that name using the completed task |
 | Conversation continues | Silently considers a rename every 10 minutes (configurable) |
 | Session topic drifts | Updates only when the current name no longer fits |
 | Run `/autoname` | Manually regenerate from recent context |
@@ -94,14 +95,18 @@ Matching entries with text are treated as user turns: they keep their chronologi
 ### Automatic naming
 
 ```
-first complete dialogue
+first textual request/response pair (message_end)
         ↓
-Pi reaches agent_settled
+AI generates an initial name in the background
         ↓
-AI generates a semantic session name in the background
+agent continues working, including tool calls
         ↓
-setSessionName(name)
+agent_settled → reconsider the name using recent task context
 ```
+
+The initial pass does not wait for tools to finish. Tool-only, thinking-only, failed, and cancelled responses do not trigger it. One refinement at settlement bypasses the usual cooldown and keeps the existing name when it still fits; subsequent updates use the normal cooldown. A first task can therefore use two naming passes. The settled pass cancels any still-running initial request, and late results cannot overwrite its name.
+
+A pending refinement survives reload once an initial name has been saved. `/name` or `/autoname` cancels that refinement; manual-name protection and the normal grace period still apply. If no early name could be attempted, naming at settlement remains available. Older unmarked sessions continue to use recent context rather than an obsolete opening exchange.
 
 ### Periodic re-naming
 
@@ -176,7 +181,7 @@ The repository has no development dependency. With Node.js 22.6 or later (Node.j
 npm test
 ```
 
-Pi provides the two declared peer dependencies at extension runtime. The current host verification baseline is Pi **1.3.0**. Naming calls use `ctx.modelRegistry.streamSimple().result()` so Pi resolves provider authentication, including providers that do not require an API key.
+Pi provides the two declared peer dependencies at extension runtime. The current host verification baseline is Pi **1.4.0** (Node.js **24.21.0**). Naming calls use `ctx.modelRegistry.streamSimple().result()` so Pi resolves provider authentication, including providers that do not require an API key.
 
 An additional offline check uses the installed Pi loader, runner, session manager, and model runtime with an in-memory test provider:
 
@@ -184,7 +189,13 @@ An additional offline check uses the installed Pi loader, runner, session manage
 PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-host-smoke.mjs
 ```
 
-This checks automatic/manual naming, reload state, redaction, and failure fallback without using personal credentials or external models. See [compatibility evidence and limits](doc/Pi版本兼容性与影响分析.md).
+This checks automatic/manual naming, reload state, redaction, and failure fallback without using personal credentials or external models. An additional real `AgentSession` check proves the first title appears while a fixture tool is still running, then gets refined after settlement:
+
+```bash
+PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-early-naming-smoke.mjs
+```
+
+Set `PI_HOST_ROOT` to the actual installed package directory if Pi is managed outside global npm. These checks use offline providers, not live-model or graphical-terminal acceptance tests. See [compatibility evidence and limits](doc/Pi版本兼容性与影响分析.md).
 
 AI replies use the first nonempty text line, or the last nonempty thinking line when no text was returned, and share the same 30-character limit as local fallback labels. The quality gate checks length and basic sentence patterns; it cannot guarantee that a model’s chosen line is semantically useful.
 

@@ -19,8 +19,9 @@ export default function extension(pi: ExtensionAPI): void
 
 注册以下能力：
 - `session_start`（会话启动）— 恢复命名状态，并在 debug 模式记录 session JSONL 诊断
-- `session_info_changed`（会话名称变更）— 立即识别 `/name`，写入手工名称 marker
-- `agent_settled`（代理完全稳定）— 后台触发首次或周期命名，不阻塞主代理收口
+- `session_info_changed`（会话名称变更）— 立即识别 `/name`，取消后台命名及待完成的收口修订，并写入手工名称 marker
+- `message_end`（消息完成）— 首个有效文本请求／回复对触发后台初次命名；该事件早于宿主持久化，因此使用包含当前回复的快照，不等待工具执行完毕
+- `agent_settled`（代理完全稳定）— 对初始名称进行一次近期上下文修订，随后沿用周期冷却；没有提前命名时仍可在此首次命名，不阻塞主代理收口
 - `session_shutdown`（会话关闭）— 取消未完成命名请求
 - `/autoname`（手动命令）— 显式触发一次命名，即使 `respectManualName` 已启用
 
@@ -41,7 +42,7 @@ export default function extension(pi: ExtensionAPI): void
 - `isHighQualityName(name)` — 名称质量检查
 - `blockText(content)` — 从消息 content 抽纯文本
 - `smartFallbackName(text)` — 降级命名生成
-- `parseRenameMarker(data)` — 解析 `pi-autoname-state` entry 的 marker
+- `parseRenameMarker(data)` — 解析 `pi-autoname-state` entry 的 marker；初次提前命名的 `provisional: true` 用于 reload 后恢复待完成的收口修订，旧 marker 保持兼容
 - `getFirstDialogue(branch, options)` / `getRecentDialogue(branch, max, options)` / `getInitialDialogue(branch, options)` — 对话提取；启用时匹配的 `custom_message` 以 user 身份按时间顺序参与
 
 常量：`DEFAULT_CONFIG`、`MIN_NAME_LENGTH`、`MAX_NAME_LENGTH`、`RAW_SLICE_RE`、`SENTENCE_END_RE`、`MIN_COOLDOWN_MINUTES`、`MAX_COOLDOWN_MINUTES`、`SENSITIVE_PATTERNS`
@@ -61,3 +62,4 @@ npm test
 - `../tests/extension-lifecycle.test.ts` — `controller.ts` 生命周期、冷却与取消
 - `../tests/extension-integration.test.ts` — `index.ts` 入口、最终请求脱敏、无 Key 调用、降级及恢复
 - `../tests/pi-host-smoke.mjs` — 本机 Pi 加载器、运行时与内存会话的离线检查，运行方法见 `../doc/Pi版本兼容性与影响分析.md`
+- `../tests/pi-early-naming-smoke.mjs` — 真实 AgentSession 与等待型测试工具，验证任务进行中产生初始名称、收口后再修订

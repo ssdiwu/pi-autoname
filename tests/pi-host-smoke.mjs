@@ -1,6 +1,6 @@
 // Optional offline smoke test against an installed Pi host; no user config or models are used.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -13,6 +13,10 @@ const oldHome = process.env.HOME;
 process.env.HOME = home;
 process.env.JITI_FS_CACHE = "false";
 const load = path => import(pathToFileURL(join(host, path)).href);
+const ai = [join(host, "node_modules/@earendil-works/pi-ai"), resolve(host, "../pi-ai")]
+  .find(path => existsSync(join(path, "dist/providers/faux.js")));
+assert.ok(ai, "Pi's faux provider must be installed");
+const loadAi = path => import(pathToFileURL(join(ai, path)).href);
 let runner;
 try {
   const { ModelRuntime } = await load("dist/core/model-runtime.js");
@@ -20,8 +24,8 @@ try {
   const { SessionManager } = await load("dist/core/session-manager.js");
   const { ExtensionRunner } = await load("dist/core/extensions/runner.js");
   const { loadExtensions } = await load("dist/core/extensions/loader.js");
-  const { InMemoryCredentialStore } = await load("node_modules/@earendil-works/pi-ai/dist/auth/credential-store.js");
-  const { fauxProvider, fauxAssistantMessage } = await load("node_modules/@earendil-works/pi-ai/dist/providers/faux.js");
+  const { InMemoryCredentialStore } = await loadAi("dist/auth/credential-store.js");
+  const { fauxProvider, fauxAssistantMessage } = await loadAi("dist/providers/faux.js");
   const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, allowModelNetwork: false, refreshOnCreate: false });
   const faux = fauxProvider({ provider: "autoname-offline-fixture", tokensPerSecond: Infinity });
   runtime.registerNativeProvider(faux.provider);

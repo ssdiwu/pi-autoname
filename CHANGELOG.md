@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-02
+
+### Changed
+
+- Name each pass from the newest relevant task and outcome, using the previous name only to avoid meaningless rewording. Keep the existing ten-minute periodic cooldown and first-settlement check.
+- Include up to two recent text tool outcomes alongside six dialogue texts, retaining the latest user goal. Redact before bounded head/tail excerpts; tool text never determines language or local fallback labels.
+
+### Fixed
+
+- Allow settlement naming to follow a changed outcome found only in tool results, without requiring a new user message or an assistant repetition. Quote context delimiters so embedded tool markup cannot impersonate another prompt section.
+
 ## [0.7.1] - 2026-11-02
 
 ### Changed

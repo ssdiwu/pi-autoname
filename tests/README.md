@@ -6,7 +6,7 @@ pi-autoname 的测试目录。
 
 | 文件 | 职责 |
 |---|---|
-| `pi-autoname.test.ts` | `extensions/lib.ts` 纯函数测试：配置、脱敏、名称质量、尾部对话提取、marker 解析 |
+| `pi-autoname.test.ts` | `extensions/lib.ts` 纯函数测试：配置、脱敏、名称质量、近期任务与工具证据提取、预算和语言隔离、marker 解析 |
 | `extension-lifecycle.test.ts` | `extensions/controller.ts` 生命周期测试：提前命名与收口修订、周期冷却、手工名称保护、稳定标题、请求替换与关闭取消 |
 | `extension-integration.test.ts` | 临时 HOME 中执行真实扩展入口，验证无 Key 调用、最终请求脱敏、降级与 reload 状态 |
 | `pi-host-smoke.mjs` | 可选的本机 Pi 离线宿主检查，使用真实加载器、运行时与内存会话 |
@@ -40,3 +40,5 @@ PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" python3 tests/pi-t
 This starts the actual interactive CLI inside a pseudo-terminal and captures OSC title sequences. It verifies multiple animation frames, normal completion, no idle polling, manual `/name`, `/reload`, Escape cancellation and clean shutdown. It uses a temporary HOME, an isolated environment, no persisted session, and Pi's built-in offline faux provider. It does not connect to a real model or verify how a particular graphical terminal renders its tab bar.
 
 The TypeScript integration tests also check TUI-only behavior (including RPC with `hasUI: true`), disabled animation, manual-name protection, naming failure, overlap, and late results after session replacement.
+
+Latest-task naming checks cover a topic change present only in a tool result, bounded tool context, retained latest-user intent, redacted head/tail excerpts, quoted tool markup, safe fallback, and the unchanged cooldown.

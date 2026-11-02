@@ -2,6 +2,16 @@
 
 > 记录本扩展实际采用的宿主接口与验证边界，不能仅凭版本号或导入成功认定完整兼容。
 
+## 组合验证 — 2026-11-02
+
+- 整合 PR #10 `91ec4e8` 与 PR #11 `51c59e2`，基准 `main` 为 `2807908`。
+- 当前环境：Pi / pi-ai **1.4.0**，Node.js **22.22.3**。发布 `0.7.1` 的 peerDependencies 为 `^1.4.0`，Node.js 最低版本为 `22.19.0`。
+- `session_start` 的命名包装器同时透传 `dialogue` 快照并追踪当前会话的命名活动；`message_end` 的提前命名、`agent_settled` 的一次修订共享控制器和动画生命周期。
+- 组合集成测试覆盖工具仍运行时提前命名、收口替换请求、迟到结果、两种手工名称配置、显式 `/autoname`、临时 marker 重载恢复、安全降级及冷却、非 TUI 与动画关闭。
+- 真实离线 AgentSession 检查同时观察两阶段命名和 TUI 标题状态；PTY 检查启用 AI 命名，通过等待初始名称的工具验证提前命名、收口后最终名称、OSC 标题输出、`/name`、`/reload`、Escape 和关闭。
+- Escape 的 `agent_settled.aborted` 只结束主 Agent 的活动状态，沿用原有命名行为：后台命名可以继续，直到完成、被替代、手工改名或会话关闭。不可把此行为描述为“取消全部模型请求”。
+- 这些检查使用离线测试模型，不代表外部模型认证／网络、图形终端视觉或未测试 Pi 版本已经验收。
+
 ## Terminal-title verification — 2026-10-22
 
 The terminal-title feature is checked against Pi **1.4.0** and Node.js **24.21.0**. The earlier naming baseline below remains historical evidence, not a claim that every host version has been retested.
@@ -20,10 +30,10 @@ The PTY check runs the real interactive CLI with an offline faux provider and ve
 
 ## 历史验证基线
 
-- 本机 Pi / pi-ai：`1.3.0`；Node.js：`22.22.3`。
+- 本机 Pi / pi-ai：`1.4.0`；Node.js：`24.21.0`。
 - pi-autoname：`0.7.0`；扩展版本独立于 Pi 版本。
 - Pi 在运行时提供对等依赖，项目没有额外开发依赖。
-- 历史适配基线为 Pi `0.80.10`；本次已在 `1.3.0` 做离线宿主验证，没有重新运行旧版宿主，不声称所有旧版本通过。
+- 历史适配基线包括 Pi `0.80.10` 与 `1.3.0`；本次已在 `1.4.0` 做离线宿主验证，没有重新运行旧版宿主，不声称所有旧版本通过。
 
 ## 模型调用与认证
 
@@ -40,11 +50,14 @@ The PTY check runs the real interactive CLI with an offline faux provider and ve
 | Pi 接口或事件 | 本项目行为 |
 |---|---|
 | `session_start` | 从当前分支的命名 marker（标记）恢复状态与冷却时间 |
-| `agent_settled` | 后台考虑首次或周期命名，不阻塞主代理收口 |
-| `session_info_changed` | 立即识别手工 `/name` 变更 |
+| `message_end` | 从首个有效文本请求／回复对提前命名；使用包含尚未持久化回复的快照，不等待工具完成 |
+| `agent_settled` | 初始名称修订一次，后续沿用周期冷却；没有提前命名时仍可首次命名，不阻塞主代理收口 |
+| `session_info_changed` | 立即识别手工 `/name` 变更，取消后台命名与待完成的收口修订 |
 | `session_shutdown` | 取消未完成请求并拒绝迟到结果 |
 | `setSessionName()` / `getSessionName()` | 读写会话名称 |
 | `appendEntry()` | 保存命名状态，不进入命名对话 |
+
+首个任务最多触发提前命名与收口修订两轮；收口时较新的上下文会替代未完成的初始请求。初始 marker 的可选 `provisional: true` 在 reload 后恢复待完成的修订，旧 marker 的冷却行为不变。工具调用／思考块本身以及失败／取消的回复不触发提前命名。
 
 自动与 `/autoname` 共享命名核心。`language` 为有效 BCP 47 locale 时优先作为 AI 语言要求，默认或非法配置回到 `auto` 检测；本地提取不能翻译文本。AI 正文取首个非空行，仅思考块输出取最后非空行，再与本地降级共用 30 字符上限和质量门禁；这些规则不保证语义质量。单次模型尝试在 12 秒时发出取消信号，所有模型共用 30 秒预算；宿主认证也处于该尝试的取消信号范围。这是协作式取消，依赖宿主及 provider 响应 AbortSignal；若第三方实现忽略取消，不能保证硬性截止。标题仍适用时不重复改写。`respectManualName: true` 保持手工名称，直到显式运行 `/autoname`。
 
@@ -61,17 +74,23 @@ debug 日志仅包含固定状态事件及明确选取的诊断元数据，不�
 ```bash
 npm test
 PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-host-smoke.mjs
+PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-early-naming-smoke.mjs
+PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" python3 tests/pi-tui-smoke.py
 ```
 
 - `npm test`：纯函数、命名控制器和真实扩展入口的集成测试；模型运行时由测试替代，检查最终请求与名称／marker 写入。
-- 宿主检查：使用已安装 Pi `1.3.0` 的加载器、ExtensionRunner、SessionManager.inMemory、ModelRuntime、ModelRegistry 和官方 faux provider（离线测试模型）。验证无 Key 自动命名、虚拟模型原生路由、`/autoname`、重新加载后的状态恢复、最终请求脱敏、模型失败降级，敏感文本不得作为降级标题、显式语言、思考级别选项、多行／仅思考输出提取和长降级标题。
+- 宿主检查：使用已安装 Pi `1.4.0` 的加载器、ExtensionRunner、SessionManager.inMemory、ModelRuntime、ModelRegistry 和官方 faux provider（离线测试模型）。验证无 Key 自动命名、虚拟模型原生路由、`/autoname`、重新加载后的状态恢复、最终请求脱敏、模型失败降级，敏感文本不得作为降级标题、显式语言、思考级别选项、多行／仅思考输出提取和长降级标题。
+- 提前命名检查：使用真实 AgentSession 驱动消息持久化、工具执行与收口事件；测试工具等待初始名称出现后才返回，随后验证完整任务上下文产生第二次命名，并检查两阶段 TUI 标题活动和最终静态标题。
 - 检查使用临时 HOME、内存凭据与会话，不读取真实凭据，不调用外部模型，不修改个人 Pi 配置；临时 HOME 在结束后清理。
-- 未覆盖：真实外部模型、OAuth 登录／刷新、实际交互终端的 `/reload` 操作。宿主重新加载检查不等同于终端人工验收。
+- PTY 检查：在真实交互 CLI 中启用 AI 命名，验证工具等待期间的提前标题、收口修订、OSC 动画标题、手工 `/name`、`/reload`、Escape 和关闭。
+- 未覆盖：真实外部模型、OAuth 登录／刷新、图形终端视觉与人工操作验收。离线宿主和自动 PTY 检查不等同于这些验收。
 
 ## 版本记录
 
 | 日期 | Pi 基线 | 变更 |
 |---|---|---|
+| 2026-11-02 | `1.4.0` | `0.7.1` 组合候选：96 项测试、离线宿主、两阶段命名／TUI 标题和真实 PTY 组合验证；同步依赖基线 |
+| 2026-10-23 | `1.4.0` | 首个文本请求／回复对提前命名、收口修订、手工名称竞态保护与真实 AgentSession 离线验证 |
 | 2026-10-19 | `1.3.0` | 本地维护候选：移植 #2/#3/#7，增加 #4 显式语言及同入口／宿主回归；未发布 |
 | 2026-10-19 | `1.3.0` | 使用宿主模型调用，修复无 Key 限制和 JSON 凭据脱敏，补入口集成与离线宿主验证 |
 | 2026-07-18 | `0.80.10` | 对齐生命周期与当时的 compat 兼容入口；该调用路径现已替换 |

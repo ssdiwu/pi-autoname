@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix="pi-autoname-tui-") as temporary:
     project.mkdir()
     agent = home / ".pi/agent"
     agent.mkdir(parents=True)
-    (agent / "pi-autoname.json").write_text(json.dumps({"enabled": False, "titleSpinner": True}))
+    (agent / "pi-autoname.json").write_text(json.dumps({"enabled": True, "titleSpinner": True, "respectManualName": True, "model": "title-naming-fixture/offline"}))
     (agent / "settings.json").write_text(json.dumps({"quietStartup": True}))
     fixture = home / "fixture.ts"
     fixture.write_text(f"""
@@ -39,12 +39,36 @@ export default function (pi) {{
     tokensPerSecond: 30,
     tokenSize: {{ min: 1, max: 1 }},
   }});
+  const naming = fauxProvider({{
+    provider: "title-naming-fixture",
+    models: [{{ id: "offline", name: "Offline naming fixture", reasoning: false }}],
+    tokensPerSecond: 30,
+    tokenSize: {{ min: 1, max: 1 }},
+  }});
   pi.registerProvider(faux.provider);
+  pi.registerProvider(naming.provider);
+  pi.registerTool({{
+    name: "early_title_gate", label: "Early title gate", description: "Wait for the early title while the task remains active.",
+    parameters: {{ type: "object", properties: {{}}, additionalProperties: false }},
+    async execute() {{
+      const deadline = Date.now() + 5000;
+      while (pi.getSessionName() !== "Database diagnostics" && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+      if (pi.getSessionName() !== "Database diagnostics") throw new Error("Early naming did not complete before the tool");
+      return {{ content: [{{ type: "text", text: "Located the connection pool leak" }}], details: {{}} }};
+    }},
+  }});
   pi.on("session_start", () => {{
-    faux.setResponses(Array.from({{ length: 5 }}, () => fauxAssistantMessage([
+    naming.setResponses([fauxAssistantMessage("Database diagnostics"), fauxAssistantMessage("Connection pool repair")]);
+    faux.setResponses([
+      fauxAssistantMessage([
+        {{ type: "text", text: "Investigating database connection failures" }},
+        {{ type: "toolCall", id: "early-gate", name: "early_title_gate", arguments: {{}} }},
+      ], {{ stopReason: "toolUse" }}),
+      fauxAssistantMessage("Repaired the leaking connection pool"),
+      ...Array.from({{ length: 5 }}, () => fauxAssistantMessage([
       {{ type: "thinking", thinking: "Checking an offline terminal title animation." }},
       {{ type: "text", text: "Offline fixture completed successfully." }},
-    ])));
+    ]))]);
   }});
 }}
 """)
@@ -68,7 +92,7 @@ export default function (pi) {{
         "--extension", str(root / "index.ts"), "--extension", str(fixture),
         "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files",
         "--no-mcp", "--no-tools", "--no-approve",
-        "--model", "title-fixture/offline", "--name", "Spinner fixture",
+        "--model", "title-fixture/offline",
     ], cwd=project, env=environment, stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
     os.close(slave)
     output = bytearray()
@@ -108,13 +132,14 @@ export default function (pi) {{
         return [title for title in values if re.match(r"^π - [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] - ", title)]
 
     try:
-        wait_for(lambda: titles() and titles()[-1] == "π - Spinner fixture", "startup title")
+        wait_for(lambda: titles() and titles()[-1] == "π - project", "startup title")
         drain(0.3)
-        assert titles()[-1] == "π - Spinner fixture", "host startup must not overwrite the final title"
+        assert titles()[-1] == "π - project", "host startup must not overwrite the final title"
         start = len(titles())
-        send("Exercise the offline title animation\r")
+        send("Fix database connections\r")
         wait_for(lambda: len(set(animated(titles()[start:]))) >= 3, "three distinct spinner frames during inference")
-        wait_for(lambda: titles()[-1] == "π - Spinner fixture", "normal completion restores idle title")
+        wait_for(lambda: any(title.endswith(" - Database diagnostics") for title in animated(titles()[start:])), "early title must appear with animation while the tool/task is active")
+        wait_for(lambda: titles()[-1] == "π - Connection pool repair", "settled refinement restores the final idle title")
         idle_count = len(titles())
         drain(0.4)
         assert len(titles()) == idle_count, "idle titles must not keep polling"
@@ -136,7 +161,7 @@ export default function (pi) {{
         send("\x04")
         wait_for(lambda: process.poll() is not None, "clean shutdown")
         assert process.returncode == 0, f"Pi exited with {process.returncode}"
-        print("PASS: real Pi TUI/PTY: startup, animated inference, idle/no polling, manual name, /reload, Escape cancellation, clean shutdown (offline provider)")
+        print("PASS: real Pi TUI/PTY: startup, early naming during a gated tool with animation, settled refinement, idle/no polling, manual name, /reload, Escape cancellation, clean shutdown (offline provider)")
     finally:
         if process.poll() is None:
             process.terminate()

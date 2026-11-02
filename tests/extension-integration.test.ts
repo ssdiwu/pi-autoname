@@ -83,9 +83,16 @@ async function setup(t: any, options: {
   await handlers.get("session_start")({}, ctx);
   t.after(() => handlers.get("session_shutdown")?.({}, ctx));
   return {
-    calls, markers, notifications, titles, ctx,
+    calls, markers, notifications, titles, ctx, branch,
     emit: (type: string, event: any = {}) => handlers.get(type)?.(event, ctx),
     get name() { return name; },
+    response: async (message: any) => {
+      // Pi emits message_end before appending the message to SessionManager.
+      const pending = handlers.get("message_end")?.({ message }, ctx);
+      branch.push({ type: "message", message });
+      await pending;
+      for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve));
+    },
     externalName: async (next: string) => { name = next; await handlers.get("session_info_changed")({ name: next }, ctx); },
     manual: () => commands.get("autoname").handler("", ctx),
     settled: async () => {
@@ -96,6 +103,149 @@ async function setup(t: any, options: {
     shutdown: () => handlers.get("session_shutdown")({}, ctx),
   };
 }
+
+describe("early naming and terminal title composition", () => {
+  const response = { role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Investigating database failures" }] };
+  const userBranch = () => [{ type: "message", message: { role: "user", content: "Fix database connections" } }];
+  const flush = async () => { for (let i = 0; i < 10; i++) await new Promise(resolve => setImmediate(resolve)); };
+  const result = (text: string) => ({ content: [{ type: "text", text }] });
+  const busy = /^π - [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] - /;
+
+  it("keeps the response snapshot and animation through early naming, tools and gated refinement", async t => {
+    let finishRefinement: any;
+    let pass = 0;
+    const test = await setup(t, { mode: "tui", branch: userBranch(), complete: async () => ++pass === 1
+      ? result("Early database title") : new Promise(resolve => { finishRefinement = resolve; }) });
+    await test.emit("agent_start");
+    await test.response(response);
+    assert.equal(test.name, "Early database title");
+    assert.match(test.calls[0].context.messages[0].content[0].text, /Investigating database failures/);
+    assert.match(test.titles.at(-1)!, busy, "early naming must not clear main-agent activity");
+    await test.emit("agent_end");
+    assert.match(test.titles.at(-1)!, busy);
+    test.branch.push({ type: "message", message: { role: "assistant", content: "Repaired the connection pool" } });
+    await test.settled();
+    assert.equal(test.calls.length, 2);
+    assert.match(test.calls[1].context.messages[0].content[0].text, /Repaired the connection pool/);
+    assert.match(test.titles.at(-1)!, busy, "refinement must animate after main-agent settlement");
+    finishRefinement(result("Connection pool repair"));
+    await flush();
+    assert.equal(test.titles.at(-1), "π - Connection pool repair");
+    assert.equal(test.markers[0].provisional, true);
+    assert.equal(test.markers.at(-1).provisional, undefined);
+    assert.ok(test.markers.every(marker => !busy.test(marker.name)));
+    await test.settled();
+    assert.equal(test.calls.length, 2, "completed refinement must obey cooldown");
+  });
+
+  it("rejects late early work without stopping the replacement refinement spinner", async t => {
+    const resolves: any[] = [];
+    const test = await setup(t, { mode: "tui", branch: userBranch(), complete: () => new Promise(resolve => resolves.push(resolve)) });
+    await test.emit("agent_start");
+    await test.response(response);
+    await test.settled();
+    assert.equal(test.calls.length, 2);
+    assert.equal(test.calls[0].options.signal.aborted, true);
+    resolves[0](result("Stale early title"));
+    await flush();
+    assert.equal(test.name, undefined);
+    assert.match(test.titles.at(-1)!, busy);
+    resolves[1](result("Final database title"));
+    await flush();
+    assert.equal(test.name, "Final database title");
+    assert.equal(test.titles.at(-1), "π - Final database title");
+  });
+
+  it("lets manual names cancel early or final work without clearing a still-busy agent", async t => {
+    for (const respectManualName of [false, true]) for (const phase of ["early", "final"]) {
+      const resolves: any[] = [];
+      const test = await setup(t, { mode: "tui", branch: userBranch(), config: { respectManualName }, complete: () => new Promise(resolve => resolves.push(resolve)) });
+      await test.emit("agent_start");
+      await test.response(response);
+      if (phase === "final") await test.settled();
+      await test.externalName("My chosen title");
+      assert.ok(test.calls.every(call => call.options.signal.aborted));
+      if (phase === "early") assert.match(test.titles.at(-1)!, busy);
+      else assert.equal(test.titles.at(-1), "π - My chosen title");
+      resolves.forEach(resolve => resolve(result("Late generated title")));
+      await flush();
+      await test.settled();
+      assert.equal(test.name, "My chosen title");
+      assert.equal(test.titles.at(-1), "π - My chosen title");
+      assert.equal(test.calls.length, phase === "early" ? 1 : 2);
+    }
+  });
+
+  it("restores provisional refinement on reload and ignores the old runtime's late completion", async t => {
+    let pass = 0;
+    const resolves: any[] = [];
+    const test = await setup(t, { mode: "tui", branch: userBranch(), complete: async () => ++pass === 1
+      ? result("Provisional database title") : new Promise(resolve => resolves.push(resolve)) });
+    await test.emit("agent_start");
+    await test.response(response);
+    await test.settled();
+    await test.reload();
+    assert.equal(test.calls[1].options.signal.aborted, true);
+    await test.settled();
+    assert.equal(test.calls.length, 3);
+    resolves[0](result("Old refinement title"));
+    await flush();
+    assert.equal(test.name, "Provisional database title");
+    assert.match(test.titles.at(-1)!, busy);
+    resolves[1](result("Reloaded final title"));
+    await flush();
+    assert.equal(test.titles.at(-1), "π - Reloaded final title");
+    await test.settled();
+    assert.equal(test.calls.length, 3);
+  });
+
+  it("lets explicit autoname replace early work without an extra settlement revision", async t => {
+    const resolves: any[] = [];
+    const test = await setup(t, { mode: "tui", branch: userBranch(), complete: () => new Promise(resolve => resolves.push(resolve)) });
+    await test.emit("agent_start");
+    await test.response(response);
+    const manual = test.manual();
+    assert.equal(test.calls[0].options.signal.aborted, true);
+    resolves[0](result("Stale early title"));
+    await flush();
+    assert.match(test.titles.at(-1)!, busy);
+    resolves[1](result("Explicit task title"));
+    await manual;
+    assert.match(test.titles.at(-1)!, busy);
+    await test.settled();
+    assert.equal(test.calls.length, 2);
+    assert.equal(test.titles.at(-1), "π - Explicit task title");
+  });
+
+  it("clears naming animation after early/refinement failure and preserves fallback cooldown on reload", async t => {
+    const test = await setup(t, { mode: "tui", branch: userBranch(), complete: async () => { throw new Error("offline failure"); } });
+    await test.emit("agent_start");
+    await test.response(response);
+    assert.equal(test.markers[0].source, "fallback");
+    assert.equal(test.markers[0].provisional, true);
+    assert.match(test.titles.at(-1)!, busy);
+    await test.settled();
+    assert.equal(test.calls.length, 2);
+    assert.equal(test.markers.at(-1).provisional, undefined);
+    assert.equal(test.titles.at(-1), `π - ${test.name}`);
+    await test.reload();
+    await test.settled();
+    assert.equal(test.calls.length, 2);
+    assert.equal(test.titles.at(-1), `π - ${test.name}`);
+  });
+
+  it("retains AI naming without title writes in non-TUI modes or when the spinner is disabled", async t => {
+    for (const options of [{ mode: "rpc" }, { mode: "json" }, { mode: "print" }, { mode: "tui", config: { titleSpinner: false } }] as const) {
+      const test = await setup(t, { ...options, branch: userBranch() });
+      await test.emit("agent_start");
+      await test.response(response);
+      await test.settled();
+      assert.equal(test.calls.length, 2);
+      assert.ok(test.name);
+      assert.deepEqual(test.titles, []);
+    }
+  });
+});
 
 describe("terminal title lifecycle integration", () => {
   it("stays busy across tools, low-level agent ends and retries until settlement", async t => {
@@ -199,6 +349,120 @@ describe("terminal title lifecycle integration", () => {
 });
 
 describe("extension naming integration", () => {
+  it("names the first request/response before tools finish, then refines at settlement", async t => {
+    let passes = 0;
+    const test = await setup(t, {
+      branch: [{ type: "message", message: { role: "user", content: "Fix database connections" } }],
+      complete: async () => ({ content: [{ type: "text", text: ++passes === 1 ? "Database diagnostics" : "Connection pool repair" }] }),
+    });
+    await test.response({ role: "assistant", stopReason: "toolUse", content: [
+      { type: "text", text: "Investigating connection failures" },
+      { type: "toolCall", id: "inspect", name: "inspect", arguments: {} },
+    ] });
+    assert.equal(test.name, "Database diagnostics", "the first title must not wait for agent_settled");
+    assert.equal(test.markers[0].provisional, true);
+    const initialPrompt = test.calls[0].context.messages[0].content[0].text;
+    assert.match(initialPrompt, /Fix database connections/);
+    assert.match(initialPrompt, /Investigating connection failures/);
+    await test.response({ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Repaired the leaking connection pool" }] });
+    assert.equal(test.calls.length, 1, "later responses must not restart initial naming");
+    await test.settled();
+    assert.equal(test.name, "Connection pool repair");
+    assert.equal(test.calls.length, 2, "settlement refines once despite the normal cooldown");
+    assert.match(test.calls[1].context.messages[0].content[0].text, /Repaired the leaking connection pool/);
+    assert.equal(test.markers.at(-1).provisional, undefined);
+    await test.settled();
+    assert.equal(test.calls.length, 2, "subsequent updates obey the existing cooldown");
+  });
+
+  it("waits for an actual textual response and ignores failed or aborted messages", async t => {
+    const test = await setup(t, { branch: [{ type: "message", message: { role: "user", content: "Fix database connections" } }] });
+    for (const message of [
+      { role: "user", content: "Another user message" },
+      { role: "assistant", stopReason: "toolUse", content: [{ type: "thinking", thinking: "private reasoning" }, { type: "toolCall", name: "inspect" }] },
+      { role: "assistant", stopReason: "error", content: [{ type: "text", text: "Failed response" }] },
+      { role: "assistant", stopReason: "aborted", content: [{ type: "text", text: "Cancelled response" }] },
+      { role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "   " }] },
+    ]) await test.response(message);
+    assert.equal(test.calls.length, 0);
+    await test.response({ role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Inspecting the database" }] });
+    assert.equal(test.calls.length, 1);
+  });
+
+  it("does not name early without textual user context or when naming is disabled", async t => {
+    for (const options of [
+      { branch: [{ type: "message", message: { role: "user", content: [{ type: "image", data: "fixture", mimeType: "image/png" }] } }] },
+      { config: { enabled: false } },
+      { name: "Existing title" },
+    ]) {
+      const test = await setup(t, options);
+      await test.response({ role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Inspecting the database" }] });
+      assert.equal(test.calls.length, 0);
+    }
+  });
+
+  it("keeps early naming nonblocking and supersedes it with settled context", async t => {
+    let resolveEarly: any;
+    let passes = 0;
+    const test = await setup(t, { complete: () => ++passes === 1
+      ? new Promise(resolve => { resolveEarly = resolve; })
+      : Promise.resolve({ content: [{ type: "text", text: "Settled task title" }] }) });
+    await test.response({ role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Starting the task" }] });
+    assert.equal(test.calls.length, 1);
+    assert.equal(test.name, undefined);
+    await test.response({ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Task finished" }] });
+    assert.equal(test.calls.length, 1);
+    await test.settled();
+    assert.equal(test.calls[0].options.signal.aborted, true);
+    assert.equal(test.name, "Settled task title");
+    resolveEarly({ content: [{ type: "text", text: "Stale initial title" }] });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(test.name, "Settled task title");
+  });
+
+  it("restores pending refinement after reload and protects an intervening manual name", async t => {
+    const test = await setup(t);
+    await test.response({ role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Starting the task" }] });
+    assert.equal(test.calls.length, 1);
+    await test.reload();
+    await test.settled();
+    assert.equal(test.calls.length, 2, "the provisional marker must survive reload");
+    const manual = await setup(t, { config: { respectManualName: true } });
+    await manual.response({ role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Starting the task" }] });
+    await manual.externalName("My chosen title");
+    await manual.settled();
+    assert.equal(manual.name, "My chosen title");
+    assert.equal(manual.calls.length, 1);
+  });
+
+  it("uses the same redaction and custom-message opt-in for early naming", async t => {
+    for (const includeCustomMessages of [false, ["worker"]]) {
+      const test = await setup(t, {
+        branch: [{ type: "custom_message", customType: "worker", display: false, content: '{"password":"early-private-fixture"}' }],
+        config: { includeCustomMessages },
+      });
+      await test.response({ role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Checking the supplied configuration" }] });
+      assert.equal(test.calls.length, includeCustomMessages ? 1 : 0);
+      if (test.calls.length) {
+        const prompt = test.calls[0].context.messages[0].content[0].text;
+        assert.match(prompt, /REDACTED/);
+        assert.doesNotMatch(prompt, /early-private-fixture/);
+      }
+    }
+  });
+
+  it("rejects a late early-title result after shutdown", async t => {
+    let resolveEarly: any;
+    const test = await setup(t, { complete: () => new Promise(resolve => { resolveEarly = resolve; }) });
+    await test.response({ role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Starting the task" }] });
+    await test.shutdown();
+    assert.equal(test.calls[0].options.signal.aborted, true);
+    resolveEarly({ content: [{ type: "text", text: "Stale session title" }] });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(test.name, undefined);
+    assert.deepEqual(test.markers, []);
+  });
+
   it("treats a not-yet-created session file as normal during start and reload", async t => {
     const logs: string[] = [];
     t.mock.method(console, "error", (...args: unknown[]) => logs.push(JSON.stringify(args)));
@@ -420,6 +684,22 @@ describe("extension naming integration", () => {
     await test.manual();
     assert.deepEqual(test.calls.map(call => call.model.id), ["primary", "backup"]);
     assert.equal(test.name, "回退模型命名");
+  });
+
+  it("does not retry a completed fallback refinement on every settlement or reload", async t => {
+    const test = await setup(t, { complete: async () => { throw new Error("fixture failure"); } });
+    await test.response({ role: "assistant", stopReason: "toolUse", content: [{ type: "text", text: "Inspecting the database" }] });
+    assert.equal(test.markers[0].source, "fallback");
+    assert.equal(test.markers[0].provisional, true);
+    await test.settled();
+    assert.equal(test.calls.length, 2);
+    assert.equal(test.markers.at(-1).source, "fallback");
+    assert.equal(test.markers.at(-1).provisional, undefined);
+    await test.settled();
+    await test.reload();
+    await test.settled();
+    assert.equal(test.calls.length, 2, "completed fallback naming obeys the cooldown across reload");
+    assert.equal(test.markers.length, 2);
   });
 
   it("preserves clean local fallback naming when every model fails", async t => {

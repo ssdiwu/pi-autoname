@@ -1,6 +1,6 @@
 {
   "name": "pi-autoname",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "AI-powered session naming for Pi with an animated terminal-title progress marker",
   "type": "module",
   "keywords": [
@@ -34,12 +34,15 @@
     "test:watch": "node --test --watch tests/*.test.ts"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-ai": "^1.4.0",
+    "@earendil-works/pi-coding-agent": "^1.4.0"
   },
   "pi": {
     "extensions": [
       "./index.ts"
     ]
+  },
+  "engines": {
+    "node": ">=22.19.0"
   }
 }

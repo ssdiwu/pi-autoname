@@ -1,8 +1,8 @@
 /**
  * pi-autoname — AI-powered session naming for Pi.
  *
- * The extension names a fresh session after it settles, refreshes an outdated
- * name after a cooldown, and provides /autoname for an explicit refresh.
+ * The extension names a fresh session from its first response, refines it at
+ * settlement, and provides cooldown-based updates plus /autoname.
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 
 import {
   DEFAULT_CONFIG,
+  blockText,
   getDialogueOptions,
   getInitialDialogue,
   getNamingLanguageInstruction,
@@ -268,9 +269,10 @@ async function generateName(
   currentName: string | undefined,
   signal: AbortSignal,
   fallbackLocale: string | undefined,
+  dialogue?: DialoguePart[],
 ): Promise<NamingResult | undefined> {
   const config = loadConfig();
-  const parts = extractDialogue(ctx, mode, config);
+  const parts = dialogue ?? extractDialogue(ctx, mode, config);
   if (parts.length === 0) return undefined;
 
   const prompt = buildNamingPrompt(parts, currentName, fallbackLocale, config.language);
@@ -318,11 +320,11 @@ export default function extension(pi: ExtensionAPI): void {
       getCurrentName: () => pi.getSessionName(),
       appendMarker: (marker) => pi.appendEntry(STATE_ENTRY_TYPE, marker),
       setSessionName: (name) => pi.setSessionName(name),
-      generateName: async ({ mode, currentName, signal }) => {
+      generateName: async ({ mode, currentName, signal, dialogue }) => {
         // Capture this session's spinner, never a replacement created by /reload.
         const finish = spinner?.trackNaming(signal);
         try {
-          return await generateName(ctx, mode, currentName, signal, getI18nLocale(pi));
+          return await generateName(ctx, mode, currentName, signal, getI18nLocale(pi), dialogue);
         } finally {
           finish?.();
         }
@@ -353,6 +355,19 @@ export default function extension(pi: ExtensionAPI): void {
 
   pi.on("agent_start", () => {
     titleSpinner?.setAgentBusy(true);
+  });
+
+  pi.on("message_end", (event, ctx) => {
+    const message = event.message;
+    if (message.role !== "assistant" || message.stopReason === "error" || message.stopReason === "aborted") return;
+    if (pi.getSessionName()?.trim() || !blockText(message.content).trim()) return;
+    // message_end precedes SessionManager persistence. Include this response in
+    // a snapshot instead of waiting for tools or relying on a deferred timer.
+    const dialogue = getInitialDialogue(
+      [...ctx.sessionManager.getBranch(), { type: "message", message }],
+      getDialogueOptions(loadConfig().includeCustomMessages),
+    );
+    void controller?.handleResponse(dialogue);
   });
 
   pi.on("agent_settled", () => {

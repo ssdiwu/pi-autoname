@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-02
+
+### Changed
+
+- Require Pi / pi-ai `^1.4.0` and Node.js `>=22.19.0`; refresh the dependency lockfile for the verified host baseline.
+- Generate an initial session name in the background from the first textual request/response pair, before long-running tools finish. Refine it once using completed-task context at settlement, then retain the normal rename cooldown. Pending refinement survives reload; manual renames cancel background naming and reject stale results.
+
 ### Added
 
 - Default-on `titleSpinner` setting. TUI titles animate as `π - ⠋ - title` during agent work and naming inference, and return to `π - title` when idle. Animation does not change saved session names or make additional model calls.
@@ -17,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Integrate terminal-title tracking with the first-response dialogue snapshot; add combined lifecycle and real TUI checks for early naming, refinement, manual replacement, late results and reload.
+- Apply the normal cooldown after a completed fallback naming pass, including after reload, rather than retrying the entire model chain after every turn.
+- Honor `/name` even when it repeats the generated title; only the extension's own name-change echo is ignored, including when event delivery is delayed.
 - Treat not-yet-created session files as normal, while retaining safe diagnostics for other IO errors. Adapted from @LoveSnowEx’s PR #3.
 - Extract a concise line from multiline model replies and keep AI/local fallback names within the same quality limit. Adapted from @git-geeky’s PR #2.
 

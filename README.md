@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  Automatically name sessions after the first dialogue, periodically re-name as the conversation evolves, and regenerate on demand with <code>/autoname</code>.
+  Name sessions from the first request/response pair, refine when the task settles, and regenerate on demand with <code>/autoname</code>.
 </p>
 
 <p align="center">
@@ -19,8 +19,9 @@
 | Scenario | Behavior |
 |---|---|
 | Agent or naming model is working | Animates the terminal title: `π - ⠋ - Session title` |
-| Work finishes or is cancelled | Removes the marker: `π - Session title` |
-| First dialogue settles | Automatically generates a semantic session name |
+| All agent and naming work ends | Removes the marker: `π - Session title` |
+| First textual request/response pair arrives | Generates an initial name while the task continues |
+| First task settles | Reconsiders that name using the completed task |
 | Conversation continues | Silently considers a rename every 10 minutes (configurable) |
 | Session topic drifts | Updates only when the current name no longer fits |
 | Run `/autoname` | Manually regenerate from recent context |
@@ -43,7 +44,7 @@ Working:  π - ⠋ - Database retries
 Idle:     π - Database retries
 ```
 
-The marker cycles through ten Braille frames every 120 ms. It starts during agent preparation and stays active through reasoning, streaming, tool calls, retries, and queued follow-ups until `agent_settled`. Background naming and `/autoname` model calls are also tracked, independently of the main agent. Cancellation of naming releases its marker immediately; shutdown, session replacement, and reload clear timers and reject stale updates.
+The marker cycles through ten Braille frames every 120 ms. It starts during agent preparation and stays active through reasoning, streaming, tool calls, retries, and queued follow-ups until `agent_settled`. Background naming and `/autoname` model calls are also tracked, independently of the main agent. Escape clears main-agent activity at settlement; background naming may continue until completion or its own cancellation. Cancellation of naming releases its marker immediately; shutdown, session replacement, and reload clear timers and reject stale updates.
 
 The displayed title is the session name, or the working-directory basename until one is available. The animation only updates the terminal title through `ctx.ui.setTitle()`; it never renames the session, writes animation frames into history, or makes additional model requests. Manual `/name` changes update the displayed title immediately. Control characters are removed before sending a title to the terminal.
 
@@ -113,14 +114,18 @@ Matching entries with text are treated as user turns: they keep their chronologi
 ### Automatic naming
 
 ```
-first complete dialogue
+first textual request/response pair (message_end)
         ↓
-Pi reaches agent_settled
+AI generates an initial name in the background
         ↓
-AI generates a semantic session name in the background
+agent continues working, including tool calls
         ↓
-setSessionName(name)
+agent_settled → reconsider the name using recent task context
 ```
+
+The initial pass does not wait for tools to finish. Tool-only, thinking-only, failed, and cancelled responses do not trigger it. One refinement at settlement bypasses the usual cooldown and keeps the existing name when it still fits; subsequent updates use the normal cooldown. A first task can therefore use two naming passes. The settled pass cancels any still-running initial request, and late results cannot overwrite its name.
+
+A pending refinement survives reload once an initial name has been saved. `/name` or `/autoname` cancels that refinement; manual-name protection and the normal grace period still apply. If no early name could be attempted, naming at settlement remains available. Older unmarked sessions continue to use recent context rather than an obsolete opening exchange.
 
 ### Periodic re-naming
 
@@ -189,13 +194,13 @@ With the default `"language": "auto"`, names use the dominant natural language i
 
 ## Development
 
-The repository has no development dependency. With Node.js 22.6 or later (Node.js 22.22.3 is the tested baseline), run the built-in TypeScript test runner directly:
+The repository has no development dependency. With Node.js 22.19.0 or later (Node.js 22.22.3 is the current integration baseline), run the built-in TypeScript test runner directly:
 
 ```bash
 npm test
 ```
 
-Pi provides the two declared peer dependencies at extension runtime. The current host verification baseline is Pi **1.4.0** (Node.js **24.21.0**). Naming calls use `ctx.modelRegistry.streamSimple().result()` so Pi resolves provider authentication, including providers that do not require an API key.
+Pi provides the two declared peer dependencies (`@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent`, both `^1.4.0`) at extension runtime. The current integration baseline is Pi **1.4.0** (Node.js **22.22.3**). Naming calls use `ctx.modelRegistry.streamSimple().result()` so Pi resolves provider authentication, including providers that do not require an API key.
 
 An additional offline check uses the installed Pi loader, runner, session manager, and model runtime with an in-memory test provider:
 
@@ -203,13 +208,19 @@ An additional offline check uses the installed Pi loader, runner, session manage
 PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-host-smoke.mjs
 ```
 
-This checks automatic/manual naming, reload state, redaction, failure fallback, TUI animation, final settlement, shutdown cleanup, and RPC silence without using personal credentials or external models. On Linux/macOS, an additional Python 3 PTY test exercises real terminal-title output, `/name`, `/reload`, and Escape cancellation:
+This checks automatic/manual naming, reload state, redaction, failure fallback, TUI animation, final settlement, shutdown cleanup, and RPC silence without using personal credentials or external models. On Linux/macOS, an additional Python 3 PTY test exercises early naming during a gated tool, settlement refinement, real terminal-title output, `/name`, `/reload`, and Escape cancellation:
 
 ```bash
 PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" python3 tests/pi-tui-smoke.py
 ```
 
-Set `PI_HOST_ROOT` to the actual installed package directory if Pi is managed outside global npm. These are offline automated tests, not a live-model or graphical-terminal acceptance test. See [compatibility evidence and limits](doc/Pi版本兼容性与影响分析.md).
+An additional real `AgentSession` check verifies that the first title appears while a fixture tool is still running, animation stays active during early naming and refinement, and the final title becomes idle after settlement:
+
+```bash
+PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-early-naming-smoke.mjs
+```
+
+Set `PI_HOST_ROOT` to the actual installed package directory if Pi is managed outside global npm. These checks use offline providers, not live-model or graphical-terminal acceptance tests. See [compatibility evidence and limits](doc/Pi版本兼容性与影响分析.md).
 
 AI replies use the first nonempty text line, or the last nonempty thinking line when no text was returned, and share the same 30-character limit as local fallback labels. The quality gate checks length and basic sentence patterns; it cannot guarantee that a model’s chosen line is semantically useful.
 
@@ -218,6 +229,8 @@ AI replies use the first nonempty text line, or the last nonempty thinking line 
 Thanks to [@git-geeky](https://github.com/git-geeky) for the name-quality fixes in [PR #2](https://github.com/ssdiwu/pi-autoname/pull/2), [@LoveSnowEx](https://github.com/LoveSnowEx) for the lazy-session diagnostic fix in [PR #3](https://github.com/ssdiwu/pi-autoname/pull/3), and [@chuxubank](https://github.com/chuxubank) for thinking-suffix support in [PR #7](https://github.com/ssdiwu/pi-autoname/pull/7). These contributions are adapted to Pi’s current host runtime.
 
 Thanks to [Luca Mondada (@lmondada)](https://github.com/lmondada) for contributing opt-in custom-message context through [PR #8](https://github.com/ssdiwu/pi-autoname/pull/8). His `includeCustomMessages` setting lets extension-injected assignments inform session names, with support for selecting specific `customType` values.
+
+Thanks to [@jack-o-mania](https://github.com/jack-o-mania) for the terminal-title animation in [PR #10](https://github.com/ssdiwu/pi-autoname/pull/10) and early session naming with settlement refinement in [PR #11](https://github.com/ssdiwu/pi-autoname/pull/11).
 
 ## License
 

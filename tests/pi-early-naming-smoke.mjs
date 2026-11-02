@@ -70,7 +70,7 @@ try {
         assert.equal(naming.state.callCount, 1);
         assert.match(titles.at(-1), busyTitle, "the agent must still animate after early naming");
         toolObservedTitle = true;
-        return { content: [{ type: "text", text: "Found a connection pool leak" }], details: {} };
+        return { content: [{ type: "text", text: "Latest confirmed outcome: share-card gesture repair; the database investigation was superseded" }], details: {} };
       },
     }],
   }));
@@ -81,7 +81,7 @@ try {
       { type: "text", text: "Investigating database connection failures" },
       { type: "toolCall", id: "gate-1", name: "gated_fixture", arguments: {} },
     ], { stopReason: "toolUse" }),
-    fauxAssistantMessage("Repaired the leaking connection pool"),
+    fauxAssistantMessage("Completed the confirmed task"),
   ]);
   naming.setResponses([
     context => {
@@ -92,14 +92,15 @@ try {
       return fauxAssistantMessage("Database diagnostics");
     },
     context => {
-      assert.match(JSON.stringify(context), /Repaired the leaking connection pool/);
+      assert.match(JSON.stringify(context), /Latest confirmed outcome: share-card gesture repair/);
+      assert.match(JSON.stringify(context), /<tool-result>/);
       assert.match(titles.at(-1), busyTitle, "the naming request must animate after the agent settles");
-      return fauxAssistantMessage("Connection pool repair");
+      return fauxAssistantMessage("Share card gesture repair");
     },
   ]);
   await session.prompt("Fix database connections");
-  await waitFor(() => manager.getSessionName() === "Connection pool repair", "settlement must refine using the finished task");
-  await waitFor(() => titles.at(-1) === "π - Connection pool repair", "final title must be idle after refinement");
+  await waitFor(() => manager.getSessionName() === "Share card gesture repair", "settlement must refine using the finished task");
+  await waitFor(() => titles.at(-1) === "π - Share card gesture repair", "final title must be idle after refinement");
   assert.equal(toolObservedTitle, true);
   assert.equal(settled, true);
   assert.equal(naming.state.callCount, 2);
@@ -107,10 +108,10 @@ try {
   const markers = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "pi-autoname-state");
   assert.equal(markers[0].data.provisional, true);
   assert.equal(markers.at(-1).data.provisional, undefined);
-  session.setSessionName("Connection pool repair");
+  session.setSessionName("Share card gesture repair");
   await waitFor(() => manager.getBranch().some(entry => entry.type === "custom" && entry.customType === "pi-autoname-state" && entry.data.event === "user_rename"), "same-name manual choice must be observed through Pi's real event path");
   assert.equal(naming.state.callCount, 2);
-  console.log("PASS: actual Pi AgentSession names before a gated tool completes, refines once at settlement, keeps TUI title activity through both phases, and recognizes a same-name manual choice (offline providers)");
+  console.log("PASS: actual Pi AgentSession names before a gated tool completes, refines once at settlement, uses a changed task found only in a tool result, keeps TUI title activity through both phases, and recognizes a same-name manual choice (offline providers)");
 } finally {
   session?.dispose();
   for (const [key, value] of Object.entries(oldEnvironment)) {

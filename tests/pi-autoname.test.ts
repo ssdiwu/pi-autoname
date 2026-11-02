@@ -13,6 +13,7 @@ import {
   getInitialDialogue,
   getNamingLanguageInstruction,
   getRecentDialogue,
+  getRecentNamingDialogue,
   isHighQualityName,
   normalizeConfig,
   parseModelRef,
@@ -336,6 +337,44 @@ describe("custom message extraction", () => {
       { role: "assistant", text: "reply" },
       { role: "user", text: "Assignment: new task" },
     ]);
+  });
+});
+
+describe("latest naming evidence", () => {
+  const message = (role: string, text: any) => ({ type: "message", message: { role, content: text } });
+
+  it("adds only two recent text tool outcomes after the latest user goal in chronological order", () => {
+    const branch = [message("toolResult", "obsolete tool"), message("user", "current goal"),
+      message("assistant", "checking"), message("toolResult", "old result"),
+      message("toolResult", "new result"), message("toolResult", [{ type: "image", data: "fixture" }]),
+      message("toolResult", "latest result"), message("assistant", "done")];
+    assert.deepEqual(getRecentNamingDialogue(branch), [
+      { role: "user", text: "current goal" }, { role: "assistant", text: "checking" },
+      { role: "tool-result", text: "new result" }, { role: "tool-result", text: "latest result" },
+      { role: "assistant", text: "done" },
+    ]);
+    assert.deepEqual(getInitialDialogue(branch), getRecentNamingDialogue(branch));
+  });
+
+  it("keeps the latest user goal, latest outcome and six-dialogue budget through long tool work", () => {
+    const branch = [message("user", "English goal"),
+      ...Array.from({ length: 12 }, (_, i) => message("assistant", `progress ${i}`)),
+      message("toolResult", "中文工具结论"), message("assistant", "latest outcome")];
+    const parts = getRecentNamingDialogue(branch);
+    assert.equal(parts.filter(p => p.role !== "tool-result").length, 6);
+    assert.equal(parts[0].text, "English goal");
+    assert.equal(parts.at(-1)?.text, "latest outcome");
+    assert.match(getNamingLanguageInstruction(parts), /English/);
+  });
+
+  it("uses only opted-in custom assignments as user goals and tool boundaries", () => {
+    const branch = [message("user", "original"), message("toolResult", "previous finding"),
+      { type: "custom_message", customType: "worker", display: false, content: "new assignment" },
+      message("toolResult", "new finding")];
+    const enabled = getRecentNamingDialogue(branch, getDialogueOptions(["worker"]));
+    assert.ok(enabled.some(p => p.role === "user" && p.text === "new assignment"));
+    assert.ok(!enabled.some(p => p.text === "previous finding"));
+    assert.ok(!getRecentNamingDialogue(branch).some(p => p.text === "new assignment"));
   });
 });
 

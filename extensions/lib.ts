@@ -32,7 +32,7 @@ export const SENSITIVE_PATTERNS: Array<{ re: RegExp; replacement: string }> = [
 ];
 
 export interface DialoguePart {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool-result";
   text: string;
 }
 
@@ -412,12 +412,53 @@ export function getRecentDialogue(branch: any[], maxMessages = 6, options: Dialo
   return items.reverse();
 }
 
+/** Naming keeps six dialogue texts plus at most two results from the latest task.
+ * Keep the latest user goal even when many assistant/tool turns follow it.
+ * Tool text remains evidence, never user input or a local fallback label.
+ */
+export function getRecentNamingDialogue(branch: any[], options: DialogueOptions = {}): DialoguePart[] {
+  const items: DialoguePart[] = [];
+  let dialogueCount = 0;
+  let toolCount = 0;
+  let foundLatestUser = false;
+
+  for (let index = branch.length - 1; index >= 0; index -= 1) {
+    const entry = branch[index];
+    const includedCustom = isIncludedCustomMessage(entry, options);
+    const message = entry?.type === "message" ? entry.message : undefined;
+    const role = includedCustom ? "user" : message?.role;
+    if (role !== "user" && role !== "assistant" && role !== "toolResult") continue;
+    const text = blockText(includedCustom ? entry.content : message?.content);
+    if (!text.trim()) continue;
+
+    if (role === "toolResult") {
+      if (!foundLatestUser && toolCount < 2) {
+        items.push({ role: "tool-result", text });
+        toolCount += 1;
+      }
+      continue;
+    }
+
+    if (dialogueCount < 6) {
+      items.push({ role, text });
+      dialogueCount += 1;
+    } else if (role === "user" && !foundLatestUser) {
+      // items are newest-first; replace the oldest assistant background.
+      const oldestAssistant = items.findLastIndex(part => part.role === "assistant");
+      items.splice(oldestAssistant, 1);
+      items.push({ role, text });
+    }
+    if (role === "user") foundLatestUser = true;
+    if (dialogueCount >= 6 && foundLatestUser) break;
+  }
+  return items.reverse();
+}
+
 /**
  * Old sessions without an autoname marker should be named from their current
  * topic, while a new session keeps the first-dialogue behavior.
  */
 export function getInitialDialogue(branch: any[], options: DialogueOptions = {}): DialoguePart[] {
-  const recent = getRecentDialogue(branch, 6, options);
   let messageCount = 0;
   for (let index = branch.length - 1; index >= 0 && messageCount <= 2; index -= 1) {
     const entry = branch[index];
@@ -426,7 +467,7 @@ export function getInitialDialogue(branch: any[], options: DialogueOptions = {})
     if (role === "user" || role === "assistant" || hasCustomText) messageCount += 1;
   }
 
-  if (messageCount > 2) return recent;
+  if (messageCount > 2) return getRecentNamingDialogue(branch, options);
 
   const { firstUser, firstAssistant } = getFirstDialogue(branch, options);
   if (!firstUser || !firstAssistant) return [];

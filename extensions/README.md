@@ -45,7 +45,9 @@ export default function extension(pi: ExtensionAPI): void
 - `blockText(content)` — 从消息 content 抽纯文本
 - `smartFallbackName(text)` — 降级命名生成
 - `parseRenameMarker(data)` — 解析 `pi-autoname-state` entry 的 marker；初次提前命名的 `provisional: true` 用于 reload 后恢复待完成的收口修订，旧 marker 保持兼容
-- `getFirstDialogue(branch, options)` / `getRecentDialogue(branch, max, options)` / `getInitialDialogue(branch, options)` — 对话提取；启用时匹配的 `custom_message` 以 user 身份按时间顺序参与
+- `getFirstDialogue(branch, options)` / `getRecentDialogue(branch, max, options)` — 对话提取；启用时匹配的 `custom_message` 以 user 身份按时间顺序参与
+- `getRecentNamingDialogue(branch, options)` — 命名专用近期证据：最多六条对话，保留最新用户目标，另纳入该目标之后最近两条文本工具结果；工具以 `tool-result` 身份参与，不影响用户语言与本地降级名称
+- `getInitialDialogue(branch, options)` — 新会话取首个文本请求／回复对，已有历史取命名专用近期证据
 
 常量：`DEFAULT_CONFIG`、`MIN_NAME_LENGTH`、`MAX_NAME_LENGTH`、`RAW_SLICE_RE`、`SENTENCE_END_RE`、`MIN_COOLDOWN_MINUTES`、`MAX_COOLDOWN_MINUTES`、`SENSITIVE_PATTERNS`
 

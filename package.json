@@ -1,7 +1,7 @@
 {
   "name": "pi-autoname",
   "version": "0.7.0",
-  "description": "AI-powered session naming for Pi — generate meaningful, semantic session names via LLM",
+  "description": "AI-powered session naming for Pi with an animated terminal-title progress marker",
   "type": "module",
   "keywords": [
     "pi-package",

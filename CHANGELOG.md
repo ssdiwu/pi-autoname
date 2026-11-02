@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Default-on `titleSpinner` setting. TUI titles animate as `π - ⠋ - title` during agent work and naming inference, and return to `π - title` when idle. Animation does not change saved session names or make additional model calls.
+- Independent tracking of agent and naming work, immediate manual-name refresh, working-directory fallback, control-character sanitization, and timer/abort-listener cleanup on cancellation and session shutdown/reload.
+- Unit and extension-integration coverage for title animation, plus offline Pi runtime and terminal checks. The runtime check also supports hoisted host dependencies.
 - Explicit `language` locale for AI names, with `auto` as the default and invalid locales safely returning to automatic detection. Addresses #4.
 - Optional `:minimal` / `:low` / `:medium` / `:high` / `:xhigh` / `:max` naming-model suffixes, adapted from @chuxubank’s PR #7 to the current host `streamSimple` API.
 

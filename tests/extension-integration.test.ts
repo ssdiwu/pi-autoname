@@ -4,11 +4,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { DEFAULT_CONFIG } from "../extensions/lib.ts";
+import { TITLE_FRAME_MS } from "../extensions/title-spinner.ts";
 
 let instance = 0;
 async function setup(t: any, options: {
   user?: string;
   name?: string;
+  mode?: "tui" | "rpc" | "json" | "print";
   config?: Record<string, unknown>;
   rawConfig?: string;
   diagnostics?: boolean;
@@ -33,6 +35,7 @@ async function setup(t: any, options: {
   const commands = new Map<string, any>();
   const markers: any[] = [];
   const notifications: any[] = [];
+  const titles: string[] = [];
   const calls: any[] = [];
   let name = options.name;
   const branch: any[] = options.branch ?? [
@@ -47,6 +50,9 @@ async function setup(t: any, options: {
   ].join("\n"));
   const model = { provider: "fixture", id: "keyless" };
   const ctx = {
+    cwd: "/projects/app",
+    mode: options.mode ?? "print",
+    hasUI: options.mode === "tui" || options.mode === "rpc",
     model,
     modelRegistry: {
       find: (provider: string, id: string) => ({ provider, id }),
@@ -57,7 +63,7 @@ async function setup(t: any, options: {
       } }),
     },
     sessionManager: { getBranch: () => branch, getSessionFile: () => sessionFile },
-    ui: { notify: (...args: any[]) => notifications.push(args) },
+    ui: { notify: (...args: any[]) => notifications.push(args), setTitle: (title: string) => titles.push(title) },
   };
   const pi = {
     on: (event: string, handler: any) => handlers.set(event, handler),
@@ -77,7 +83,8 @@ async function setup(t: any, options: {
   await handlers.get("session_start")({}, ctx);
   t.after(() => handlers.get("session_shutdown")?.({}, ctx));
   return {
-    calls, markers, notifications, ctx,
+    calls, markers, notifications, titles, ctx,
+    emit: (type: string, event: any = {}) => handlers.get(type)?.(event, ctx),
     get name() { return name; },
     externalName: async (next: string) => { name = next; await handlers.get("session_info_changed")({ name: next }, ctx); },
     manual: () => commands.get("autoname").handler("", ctx),
@@ -89,6 +96,107 @@ async function setup(t: any, options: {
     shutdown: () => handlers.get("session_shutdown")({}, ctx),
   };
 }
+
+describe("terminal title lifecycle integration", () => {
+  it("stays busy across tools, low-level agent ends and retries until settlement", async t => {
+    const test = await setup(t, { mode: "tui", name: "Manual title", config: { enabled: false } });
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    await test.emit("before_agent_start");
+    assert.equal(test.titles.at(-1), "π - ⠋ - Manual title");
+    await test.emit("agent_start");
+    await test.emit("tool_execution_start");
+    await test.emit("agent_end");
+    t.mock.timers.tick(TITLE_FRAME_MS);
+    assert.equal(test.titles.at(-1), "π - ⠙ - Manual title");
+    await test.emit("agent_start");
+    assert.equal(test.titles.at(-1), "π - ⠙ - Manual title");
+    await test.settled();
+    assert.equal(test.titles.at(-1), "π - Manual title");
+    assert.equal(test.name, "Manual title");
+    assert.deepEqual(test.markers, []);
+    assert.deepEqual(test.calls, []);
+    const count = test.titles.length;
+    t.mock.timers.tick(TITLE_FRAME_MS * 10);
+    assert.equal(test.titles.length, count);
+  });
+
+  it("updates manual names immediately without persisting spinner frames", async t => {
+    const test = await setup(t, { mode: "tui", config: { respectManualName: true } });
+    await test.emit("agent_start");
+    await test.externalName("Protected title");
+    assert.equal(test.titles.at(-1), "π - ⠋ - Protected title");
+    await test.settled();
+    assert.equal(test.titles.at(-1), "π - Protected title");
+    assert.equal(test.name, "Protected title");
+    assert.equal(test.markers.length, 1);
+    assert.equal(test.markers[0].name, "Protected title");
+    assert.deepEqual(test.calls, []);
+  });
+
+  it("animates background and manual naming without blocking settlement", async t => {
+    let resolve: any;
+    const test = await setup(t, { mode: "tui", complete: () => new Promise(done => { resolve = done; }) });
+    await test.emit("agent_start");
+    await test.settled();
+    assert.equal(test.calls.length, 1);
+    assert.equal(test.titles.at(-1), "π - ⠋ - app");
+    resolve({ content: [{ type: "text", text: "Background name" }] });
+    for (let i = 0; i < 10; i++) await new Promise(done => setImmediate(done));
+    assert.equal(test.titles.at(-1), "π - Background name");
+    const pending = test.manual();
+    assert.equal(test.titles.at(-1), "π - ⠋ - Background name");
+    resolve({ content: [{ type: "text", text: "Manual refresh" }] });
+    await pending;
+    assert.equal(test.titles.at(-1), "π - Manual refresh");
+  });
+
+  it("does not let a late naming completion stop the next session's spinner", async t => {
+    let resolve: any;
+    const test = await setup(t, { mode: "tui", complete: () => new Promise(done => { resolve = done; }) });
+    const pending = test.manual();
+    await test.shutdown();
+    assert.equal(test.calls[0].options.signal.aborted, true);
+    assert.equal(test.titles.at(-1), "π - app");
+    await test.reload();
+    await test.emit("agent_start");
+    const count = test.titles.length;
+    resolve({ content: [{ type: "text", text: "Stale name" }] });
+    await pending;
+    assert.equal(test.titles.length, count);
+    assert.equal(test.titles.at(-1), "π - ⠋ - app");
+    assert.equal(test.name, undefined);
+  });
+
+  it("clears the naming marker on model failure and safe local fallback", async t => {
+    const test = await setup(t, { mode: "tui", complete: async () => { throw new Error("fixture failure"); } });
+    await test.manual();
+    assert.equal(test.titles.at(-1), "π - 修复数据库连接");
+    assert.ok(test.titles.some(title => title.includes("⠋")));
+  });
+
+  it("never sets titles in RPC, JSON or print mode", async t => {
+    for (const mode of ["rpc", "json", "print"] as const) {
+      const test = await setup(t, { mode });
+      await test.emit("before_agent_start");
+      await test.emit("agent_start");
+      await test.settled();
+      await test.manual();
+      await test.shutdown();
+      assert.deepEqual(test.titles, []);
+      assert.equal(test.name, "数据库连接修复");
+    }
+  });
+
+  it("can disable title ownership without disabling semantic naming", async t => {
+    const test = await setup(t, { mode: "tui", config: { titleSpinner: false } });
+    await test.emit("agent_start");
+    await test.settled();
+    await test.manual();
+    await test.shutdown();
+    assert.deepEqual(test.titles, []);
+    assert.equal(test.name, "数据库连接修复");
+  });
+});
 
 describe("extension naming integration", () => {
   it("treats a not-yet-created session file as normal during start and reload", async t => {

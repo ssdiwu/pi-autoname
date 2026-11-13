@@ -2,11 +2,12 @@
 
 ## 工作依据
 
-- 默认中文，称呼 507。开工、续办或跨会话时，按当前范围读取 [README](README.md)、[doc/README](doc/README.md) 与目标实现和对应测试，不重复灌入全部历史。
+- 默认中文，称呼 507。开工、续办或跨会话时按当前范围读取 [README](README.md)、[doc/README](doc/README.md) 与目标实现和对应测试，不重复灌入全部历史。
 - README 是用户可感知行为、配置与安装的唯一正文；本文只记录长期工程、隐私与交付边界，不复制产品快照，避免与实现漂移。行为现状以实现与验证为准。
-- 本仓库无开发依赖，直接使用 Node.js 内置测试运行器；工程入口见 [README 的 Development 节](README.md#development) 与 [tests/README](tests/README.md)。
+- 本仓库无开发依赖，直接用 Node.js 内置测试运行器；工程入口见 [README 的 Development 节](README.md#development) 与 [tests/README](tests/README.md)。
+- 本次授权范围与阶段结论按当次指令记录，不把历史授权延伸为远端、发布或新范围的许可。
 
-## 工程与隐私
+## 实现与隐私
 
 - 命名须来自会话语义，保持简短稳定；模型回答经过清洗和质量校验后才可作为标题，手工名称保护遵循现行配置及其约定。为什么：模型裸回答可能是解释或整句，而手工名称是否允许自动接管是已有产品选择。
 - 会话内容和标题不得输出到日志、发送到未授权 provider（模型提供商）或额外持久化为 prompt（提示词）。为什么：标题同样可能含敏感信息，调试和失败路径不能绕开隐私边界；已有违规应修实现，不能删除保护要求。
@@ -15,12 +16,10 @@
 - 0 配置目标必须成立：不写配置文件时全部字段取默认值，`model` 缺省即使用会话模型；配置文件只在首次使用时自动生成到 `~/.pi/agent/pi-autoname.json`，不并入 Pi 原生 settings.json。为什么：Pi settings 只读、无拓展命名空间，共享文件会引入写回冲突与卸载残留。
 - 调试默认关闭。为什么：自动命名是后台能力，正常使用不应产生额外日志或暴露会话信息。
 
-## 命名约定
+### 命名约定
 
-- 常量 `UPPER_SNAKE_CASE`；类型、接口 `PascalCase`；函数、变量与配置字段 `camelCase`；运行时注入接口用 `*Runtime` 后缀；枚举值用单个小驼峰词（`"toolResult"` 而非 `"tool-result"`）。
-- 提示词内 `<user>` `<assistant>` `<tool-result>` `<current-name>` 是线格式（wire format，发给模型时的固定标记），不随代码枚举名变化；改动须同步 [extensions/README](extensions/README.md) 的线格式说明与相关断言。
-- 产出同类内容的函数统一 `build*` 前缀（如 `buildLanguageInstruction`、`buildNamingPrompt`），`get*` 只用于读取运行时值。为什么：动词区分「组装新内容」与「取已有值」，降低误读。
-- 纯重命名不改行为时，同步测试与本文档提及处，并以全量测试复验。
+- 常量 `UPPER_SNAKE_CASE`；类型、接口 `PascalCase`；函数、变量与配置字段 `camelCase`；运行时注入接口用 `*Runtime` 后缀；枚举值用单个小驼峰词（`"toolResult"` 而非 `"tool-result"`）。产出内容的函数统一 `build*` 前缀，`get*` 只用于读取运行时值。为什么：动词区分「组装新内容」与「取已有值」，让调用点自解释。
+- 提示词内 `<user>` `<assistant>` `<tool-result>` `<current-name>` 是线格式（wire format，发给模型时的固定标记），不随代码枚举名变化；改动须同步 [extensions/README](extensions/README.md) 与相关断言。为什么：线格式变更会改变模型输入，超出重命名范围。
 
 ## 验证
 
@@ -29,7 +28,8 @@
 - 离线宿主检查、真实模型测试和终端人工操作分别报告，未覆盖项明确说明。为什么：内存测试模型通过，不代表外部认证、网络请求或人工 `/reload` 已验收。
 - 行为、数据、权限或公开接口变化须由未参与修改者独立审查最终改动与证据；纯文字格式且不改含义的调整可自查。为什么：自查不能替代独审。
 
-## 文档与 Git
+## 文档与交付
 
 - 触发语义、配置、隐私边界或安装入口变化时，同步 `README.md`、`CHANGELOG.md` 用户可感知条目及本文涉及处；兼容性证据记入 [doc/Pi版本兼容性与影响分析](doc/Pi版本兼容性与影响分析.md)。为什么：使用者依赖这些入口判断升级后的行为及数据边界。
-- 未经 507 明确要求，不执行 commit、push、tag 或 npm publish。为什么：本地修改、远端交付和发布是不同动作，不能由检查通过推导出操作许可。
+- 新增概念先在 [doc/GLOSSARY](doc/GLOSSARY.md) 定名再进正文。为什么：同一概念多种叫法会让文档与实现逐步脱节。
+- 未经 507 明确要求，不执行 commit、push、tag 或 npm publish；已授权的发版逐渠道读回核验。为什么：本地修改、远端交付和发布是不同动作，不能由检查通过推导出操作许可。

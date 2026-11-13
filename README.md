@@ -196,6 +196,12 @@ With the default `"language": "auto"`, names use the dominant natural language i
 
 - [pi-compaction-i18n](https://github.com/ssdiwu/pi-compaction-i18n) — localized compaction summaries
 
+## 🗂️ Project docs
+
+- [doc/README](doc/README.md) — documentation index (glossary, implementation notes, compatibility evidence)
+- [AGENTS.md](AGENTS.md) — engineering, privacy and delivery rules for contributors
+- [tests/README](tests/README.md) — test entry points and what each check can prove
+
 ## Development
 
 The repository has no development dependency. With Node.js 22.19.0 or later (Node.js 22.22.3 is the current integration baseline), run the built-in TypeScript test runner directly:

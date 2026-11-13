@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-11-14
+
+### Changed
+
+- 统一代码命名风格：`buildLanguageInstruction`、`MAX_NAME_TOKEN_BUDGET`、枚举值 `"toolResult"`；提示词线格式 `<tool-result>` 保持不变，对模型行为无影响。
+- 重写 `AGENTS.md`（新增命名约定与 0 配置边界），`doc/README.md` 改为文档导航索引，同步 `extensions/README.md` 导出名。
+
+### Removed
+
+- 移除已过时的 `.doc/` 旧文档（内容已被 `doc/`、`AGENTS.md` 与源码现状取代）；历史可从 Git 追溯。
+
 ## [0.7.2] - 2026-11-02
 
 ### Changed

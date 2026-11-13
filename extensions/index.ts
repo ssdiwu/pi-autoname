@@ -14,7 +14,7 @@ import {
   blockText,
   getDialogueOptions,
   getInitialDialogue,
-  getNamingLanguageInstruction,
+  buildLanguageInstruction,
   getRecentNamingDialogue,
   isHighQualityName,
   limitNameLength,
@@ -39,7 +39,7 @@ const CONFIG_PATH = join(homedir(), ".pi", "agent", "pi-autoname.json");
 const STATE_ENTRY_TYPE = "pi-autoname-state";
 const AI_TOTAL_BUDGET_MS = 30_000;
 const AI_ATTEMPT_TIMEOUT_MS = 12_000;
-const MAX_NAME_TOKENS = 64;
+const MAX_NAME_TOKEN_BUDGET = 64;
 
 let debugEnabled = false;
 let configCache: AutonameConfig | undefined;
@@ -177,7 +177,7 @@ function buildNamingPrompt(parts: DialoguePart[], currentName: string | undefine
   if (safeCurrentName?.redacted) debugLog("redacted sensitive session name before AI naming");
 
   const prompt = [
-    getNamingLanguageInstruction(parts, fallbackLocale, language),
+    buildLanguageInstruction(parts, fallbackLocale, language),
     "Think privately, then output only one concise session-name label (5-15 characters or words).",
     "The label must describe the current coding task, not repeat a conversational sentence.",
     "No punctuation, quotes, explanation, commas, or multiple clauses.",
@@ -194,7 +194,8 @@ function buildNamingPrompt(parts: DialoguePart[], currentName: string | undefine
       ? `${redacted.text.slice(0, 300)}\n[…]\n${redacted.text.slice(-395)}`
       : redacted.text;
     const quoted = quotePromptText(excerpt);
-    prompt.push(`<${part.role}>${quoted}</${part.role}>`);
+    const tag = part.role === "toolResult" ? "tool-result" : part.role;
+    prompt.push(`<${tag}>${quoted}</${tag}>`);
   }
   if (safeCurrentName) prompt.push(`Previous session name (wording reference only): <current-name>${quotePromptText(safeCurrentName.text)}</current-name>. Reuse it exactly only if it accurately describes the latest task and outcome; this avoids meaningless wording changes. Otherwise output the new label.`);
   return prompt.join("\n\n");
@@ -248,7 +249,7 @@ async function completeWithinBudget(
         systemPrompt: "You produce concise semantic labels for coding sessions.",
         messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
       },
-      { maxTokens: MAX_NAME_TOKENS, signal: AbortSignal.any([signal, controller.signal]), ...(thinking ? { reasoning: thinking } : {}) },
+      { maxTokens: MAX_NAME_TOKEN_BUDGET, signal: AbortSignal.any([signal, controller.signal]), ...(thinking ? { reasoning: thinking } : {}) },
     ).result();
   } finally {
     clearTimeout(timeout);

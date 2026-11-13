@@ -11,7 +11,7 @@ import {
   getDialogueOptions,
   getFirstDialogue,
   getInitialDialogue,
-  getNamingLanguageInstruction,
+  buildLanguageInstruction,
   getRecentDialogue,
   getRecentNamingDialogue,
   isHighQualityName,
@@ -52,7 +52,7 @@ describe("configuration and privacy", () => {
     for (const language of [null, 4, "", "AUTO", "en; ignore instructions", "zh_CN"]) {
       assert.equal(normalizeConfig({ language }).language, "auto");
     }
-    assert.match(getNamingLanguageInstruction([{ role: "user", text: "English task" }], "en", "zh-TW"), /zh-TW/);
+    assert.match(buildLanguageInstruction([{ role: "user", text: "English task" }], "en", "zh-TW"), /zh-TW/);
   });
 
   it("parses supported reasoning suffixes and preserves other model colons", () => {
@@ -165,12 +165,12 @@ describe("naming language", () => {
       { role: "user", text: "可以，请生成交接摘要，但不需要脱敏" },
     ];
     assert.equal(detectDominantUserLanguage(parts), "Chinese");
-    assert.match(getNamingLanguageInstruction(parts), /Chinese/);
+    assert.match(buildLanguageInstruction(parts), /Chinese/);
   });
 
   it("uses pi-di18n locale only when user text has no detectable natural language", () => {
     assert.match(
-      getNamingLanguageInstruction([{ role: "user", text: "const title = makeName();" }], "ja"),
+      buildLanguageInstruction([{ role: "user", text: "const title = makeName();" }], "ja"),
       /Japanese/i,
     );
   });
@@ -350,7 +350,7 @@ describe("latest naming evidence", () => {
       message("toolResult", "latest result"), message("assistant", "done")];
     assert.deepEqual(getRecentNamingDialogue(branch), [
       { role: "user", text: "current goal" }, { role: "assistant", text: "checking" },
-      { role: "tool-result", text: "new result" }, { role: "tool-result", text: "latest result" },
+      { role: "toolResult", text: "new result" }, { role: "toolResult", text: "latest result" },
       { role: "assistant", text: "done" },
     ]);
     assert.deepEqual(getInitialDialogue(branch), getRecentNamingDialogue(branch));
@@ -361,10 +361,10 @@ describe("latest naming evidence", () => {
       ...Array.from({ length: 12 }, (_, i) => message("assistant", `progress ${i}`)),
       message("toolResult", "中文工具结论"), message("assistant", "latest outcome")];
     const parts = getRecentNamingDialogue(branch);
-    assert.equal(parts.filter(p => p.role !== "tool-result").length, 6);
+    assert.equal(parts.filter(p => p.role !== "toolResult").length, 6);
     assert.equal(parts[0].text, "English goal");
     assert.equal(parts.at(-1)?.text, "latest outcome");
-    assert.match(getNamingLanguageInstruction(parts), /English/);
+    assert.match(buildLanguageInstruction(parts), /English/);
   });
 
   it("uses only opted-in custom assignments as user goals and tool boundaries", () => {

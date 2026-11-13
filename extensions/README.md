@@ -35,7 +35,7 @@ export default function extension(pi: ExtensionAPI): void
 
 纯函数：
 - `detectDominantUserLanguage(parts)` — 仅按用户自然语言消息判定中文、英文、日文或韩文主语言
-- `getNamingLanguageInstruction(parts, fallbackLocale, explicitLanguage)` — 生成显式语言提示；显式 language 优先，其次用户语言，无可判定用户语言时才采用可选 locale 兜底
+- `buildLanguageInstruction(parts, fallbackLocale, explicitLanguage)` — 生成显式语言提示；显式 language 优先，其次用户语言，无可判定用户语言时才采用可选 locale 兜底
 - `normalizeConfig(input)` — 配置规范化，包括 BCP 47 语言配置（非法值回到 auto）
 - `parseModelRef(modelName)` — 解析 provider/modelId 与六种思考级别后缀，未知后缀保留
 - `limitNameLength(text)` — AI／本地降级共用 30 字符上限，优先保留完整单词，不切断 UTF-16 代理对
@@ -46,12 +46,14 @@ export default function extension(pi: ExtensionAPI): void
 - `smartFallbackName(text)` — 降级命名生成
 - `parseRenameMarker(data)` — 解析 `pi-autoname-state` entry 的 marker；初次提前命名的 `provisional: true` 用于 reload 后恢复待完成的收口修订，旧 marker 保持兼容
 - `getFirstDialogue(branch, options)` / `getRecentDialogue(branch, max, options)` — 对话提取；启用时匹配的 `custom_message` 以 user 身份按时间顺序参与
-- `getRecentNamingDialogue(branch, options)` — 命名专用近期证据：最多六条对话，保留最新用户目标，另纳入该目标之后最近两条文本工具结果；工具以 `tool-result` 身份参与，不影响用户语言与本地降级名称
+- `getRecentNamingDialogue(branch, options)` — 命名专用近期证据：最多六条对话，保留最新用户目标，另纳入该目标之后最近两条文本工具结果；工具以 `toolResult` 身份参与（提示词线格式仍为 `<tool-result>`），不影响用户语言与本地降级名称
 - `getInitialDialogue(branch, options)` — 新会话取首个文本请求／回复对，已有历史取命名专用近期证据
 
 常量：`DEFAULT_CONFIG`、`MIN_NAME_LENGTH`、`MAX_NAME_LENGTH`、`RAW_SLICE_RE`、`SENTENCE_END_RE`、`MIN_COOLDOWN_MINUTES`、`MAX_COOLDOWN_MINUTES`、`SENSITIVE_PATTERNS`
 
 类型：`AutonameConfig`、`DialogueOptions`、`RenameMarker`
+
+命名规则见 [AGENTS 的「命名约定」](../AGENTS.md#命名约定)：常量 `UPPER_SNAKE_CASE`，类型 `PascalCase`，函数与字段 `camelCase`，注入接口 `*Runtime` 后缀，枚举值单个小驼峰词，产出内容用 `build*` 前缀。
 
 ## 测试
 

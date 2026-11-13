@@ -32,7 +32,7 @@ export const SENSITIVE_PATTERNS: Array<{ re: RegExp; replacement: string }> = [
 ];
 
 export interface DialoguePart {
-  role: "user" | "assistant" | "tool-result";
+  role: "user" | "assistant" | "toolResult";
   text: string;
 }
 
@@ -101,7 +101,7 @@ function localeLanguageName(locale: string): string {
 }
 
 /** Builds an explicit language requirement for the naming model. */
-export function getNamingLanguageInstruction(parts: DialoguePart[], fallbackLocale?: string, explicitLanguage = "auto"): string {
+export function buildLanguageInstruction(parts: DialoguePart[], fallbackLocale?: string, explicitLanguage = "auto"): string {
   if (explicitLanguage !== "auto") {
     return `Write the label in ${localeLanguageName(explicitLanguage)} (locale: ${explicitLanguage}). This explicit language setting overrides user-message language detection and the Pi locale.`;
   }
@@ -433,7 +433,7 @@ export function getRecentNamingDialogue(branch: any[], options: DialogueOptions 
 
     if (role === "toolResult") {
       if (!foundLatestUser && toolCount < 2) {
-        items.push({ role: "tool-result", text });
+        items.push({ role: "toolResult", text });
         toolCount += 1;
       }
       continue;

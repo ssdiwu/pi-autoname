@@ -24,8 +24,8 @@ export const SENTENCE_END_RE = /[。！？!?.…]+\s*$/;
  */
 export const PROMPT_ECHO_RES: RegExp[] = [
   /write the label/i,
-  /label in (?:simplified|traditional|english|chinese|japanese|korean)/i,
-  /\bthe label\b/i,
+  /label in (?:simplified|traditional|english|chinese|japanese|korean)\b[^\p{L}\p{N}]*(?:\d|script|characters|words)/iu,
+  /\bthe label (?:must|should|you|is determined|language)/i,
   /characters? or words/i,
   /language is determined/i,
   /user messages only/i,

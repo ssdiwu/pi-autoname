@@ -133,8 +133,12 @@ describe("name quality and fallback", () => {
     // 回归（真实坏例）：命名模型把提示词指令复述成标题 "Label in Chinese 5-15"。
     assert.equal(isHighQualityName("Label in Chinese 5-15"), false);
     assert.equal(isHighQualityName("Write the label in Chinese"), false);
+    assert.equal(isHighQualityName("the label language is Chinese"), false);
     assert.equal(isHighQualityName("characters or words"), false);
     assert.equal(isHighQualityName("user messages only"), false);
+    // 回归（二审发现）：回显规则误拒合法任务 "Fix the label alignment"。
+    assert.equal(isHighQualityName("Fix the label alignment"), true);
+    assert.equal(isHighQualityName("Label alignment fix"), true);
     assert.equal(isHighQualityName("Session naming fix"), true);
     assert.equal(isHighQualityName("数据库连接修复"), true);
   });

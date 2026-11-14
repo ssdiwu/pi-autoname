@@ -293,8 +293,17 @@ function fallbackName(parts: DialoguePart[], expectedLanguage?: NamingLanguage):
 
 function delayOrAbort(signal: AbortSignal, waitMs: number): Promise<boolean> {
   return new Promise(resolve => {
-    const timer = setTimeout(() => resolve(true), waitMs);
-    signal.addEventListener("abort", () => { clearTimeout(timer); resolve(false); }, { once: true });
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(true);
+    }, waitMs);
+    // Both completion paths remove their counterpart, so neither a fired timer
+    // nor a cancelled wait leaves a listener or timer behind.
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 

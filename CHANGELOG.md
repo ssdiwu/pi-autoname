@@ -5,13 +5,13 @@ All notable changes to `pi-autoname` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.5] - 2026-11-14
 
 ### Fixed
 
 - 命名语言改为累计会话全部 user 消息判定，不再只看本次命名的近期窗口：中文会话里晚出现的英文消息（粘贴报错、临时英文提问）不再把标题翻成英文；新会话首条消息仍是初名的全部历史，行为不变。
 - 质量门拒绝提示词指令回显：修复命名模型把语言与长度指令复述成标题（真实坏例 "Label in Chinese 5-15"），命中时该 AI 候选作废，按原链路降级（下一模型或本地 fallback）。
-- 新增标签语言门：auto 模式下 AI 候选与本地降级名的文字体系均须与用户历史判定的语言一致（真实坏例：中文会话被 group/flash 命名为 "The task investigating/confirm"），不符时该候选作废、试下一模型或回溯更早的匹配轮次。
+- 新增标签语言门：auto 模式下 AI 候选与本地降级名的文字体系均须与用户历史判定的语言一致（真实坏例：中文会话被 group/flash 命名为 "The task investigating/confirm"），不符时该候选作废、试下一模型；降级名在近期证据窗口内回溯更早的匹配轮次，找不到安全合格的匹配时不生成降级名。
 - 命名请求按 Codex（openai/codex）风格重构：指令从十条压缩到三条（约 60 词），新增「Do not answer the request」条款，请求主体改为引用证据本身，语言靠镜像用户输入而非长英文指令墙实现；候选先做格式收敛（去引号、截尾标点含 ASCII 句号、取首从句、限长）再过质量与语言门，提取函数不再内嵌质量判定。
 - 修复两个请求参数导致的系统性失败：移除英文系统提示帧（它使同一中转稳定输出英文标题，curl 裸请求对比证实）；输出预算 64→2000 token（推理模型的思考被 64 预算截断到空正文，此前表现为空候选，并非超时）。修后慢速中转的首个 AI 候选直接以中文标题落地。
 - 空响应在同一模型延时重试一次（等待可被取消），单次尝试与总预算放宽（75s/90s），慢速会话模型的首候选不再被提前放弃；本地降级同样按判定语言筛选取材轮次。

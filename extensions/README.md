@@ -43,7 +43,7 @@ export default function extension(pi: ExtensionAPI): void
 - `getDialogueOptions(includeCustomMessages)` — 按 `includeCustomMessages` 生成 `custom_message` 过滤选项（关闭 / 全部 / `customType` 白名单）
 - `redactSensitiveText(text)` — 敏感信息脱敏
 - `isHighQualityName(name)` — 名称质量检查，含提示词指令回显拒绝
-- `matchesNamingLanguage(name, language)` — 标签文字体系与判定语言的一致性检查；命名链中语言不符的 AI 候选作废并走下一候选，本地降级用它回湸更早的匹配轮次
+- `matchesNamingLanguage(name, language)` — 标签文字体系与判定语言的一致性检查；命名链中语言不符的 AI 候选作废并走下一候选，本地降级在近期证据窗口内用它回溯更早轮次
 - `blockText(content)` — 从消息 content 抽纯文本
 - `smartFallbackName(text)` — 降级命名生成
 - `parseRenameMarker(data)` — 解析 `pi-autoname-state` entry 的 marker；初次提前命名的 `provisional: true` 用于 reload 后恢复待完成的收口修订，旧 marker 保持兼容

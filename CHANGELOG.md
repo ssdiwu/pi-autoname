@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-11-14
+
 ### Changed
 
 - 新增 `doc/GLOSSARY.md` 术语表，统一初名、收口修订、周期改名、marker、提示词线格式等概念的名称与边界；`doc/README.md` 改为编号指路式文档入口。

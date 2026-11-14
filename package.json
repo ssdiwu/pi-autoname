@@ -1,6 +1,6 @@
 {
   "name": "pi-autoname",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "AI-powered session naming for Pi with an animated terminal-title progress marker",
   "type": "module",
   "keywords": [

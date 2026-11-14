@@ -128,6 +128,9 @@ try {
   await runner.getCommand("autoname").handler("", runner.createCommandContext());
   assert.equal(session.getSessionName(), "Refactor database connection");
   let routes = 0;
+  // Explicit language disables the auto language gate: this fixture's accumulated
+  // user history is mixed-language, and the scripted Chinese answer below must pass.
+  writeConfig({ language: "zh-CN" });
   runtime.registerVirtualModel({
     provider: "autoname-router-fixture", id: "auto", name: "Offline router",
     route(request) {

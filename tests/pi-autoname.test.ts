@@ -8,6 +8,9 @@ import {
   MIN_COOLDOWN_MINUTES,
   blockText,
   detectDominantUserLanguage,
+  getAllUserDialogue,
+  coerceCandidateName,
+  matchesNamingLanguage,
   getDialogueOptions,
   getFirstDialogue,
   getInitialDialogue,
@@ -126,10 +129,43 @@ describe("name quality and fallback", () => {
     assert.equal(isHighQualityName("你好，世界！不错"), false);
   });
 
+  it("rejects echoes of the naming prompt instructions", () => {
+    // 回归（真实坏例）：命名模型把提示词指令复述成标题 "Label in Chinese 5-15"。
+    assert.equal(isHighQualityName("Label in Chinese 5-15"), false);
+    assert.equal(isHighQualityName("Write the label in Chinese"), false);
+    assert.equal(isHighQualityName("characters or words"), false);
+    assert.equal(isHighQualityName("user messages only"), false);
+    assert.equal(isHighQualityName("Session naming fix"), true);
+    assert.equal(isHighQualityName("数据库连接修复"), true);
+  });
+
+  it("coerces verbose AI candidates into usable labels", () => {
+    assert.equal(coerceCandidateName("当前状态：pi-autoname 扩展已发布 0.7.4，工作树里有未提交的修复稿"), "当前状态：pi-autoname 扩展已发布 0.7.4");
+    assert.equal(coerceCandidateName('"数据库连接修复"'), "数据库连接修复");
+    assert.equal(coerceCandidateName("Session naming fix!"), "Session naming fix");
+    // 回归（独立审查发现）：ASCII 句号此前漏出，质量门会拒绝可收敛的候选。
+    assert.equal(coerceCandidateName("Database retry fix."), "Database retry fix");
+    assert.equal(coerceCandidateName("命名扩展工作状态检查"), "命名扩展工作状态检查");
+    assert.ok(coerceCandidateName("很".repeat(80)).length <= MAX_NAME_LENGTH);
+  });
+
+  it("checks label script against the detected naming language", () => {
+    assert.equal(matchesNamingLanguage("数据库连接修复", "Chinese"), true);
+    assert.equal(matchesNamingLanguage("Session naming fix", "Chinese"), false);
+    assert.equal(matchesNamingLanguage("セッション命名", "Japanese"), true);
+    assert.equal(matchesNamingLanguage("数据库名前Fix", "Chinese"), true);
+    assert.equal(matchesNamingLanguage("数据库名前Fix", "English"), false);
+    assert.equal(matchesNamingLanguage("한국어 제목", "Korean"), true);
+    assert.equal(matchesNamingLanguage("Session fix", "English"), true);
+    // 未判定出语言时不拦截，交由降级链决定
+    assert.equal(matchesNamingLanguage("Session fix", undefined), true);
+  });
+
   it("turns user requests into short fallback labels", () => {
     assert.equal(smartFallbackName("Can you please help me fix the database connection"), "fix the database connection");
     assert.equal(smartFallbackName("Fix the bug. Then deploy it."), "Fix the bug");
     assert.equal(smartFallbackName("数据库连接的问题吗"), "数据库连接的问题");
+    assert.equal(smartFallbackName("<hc from=\"t28\">帮我确认命名功能是否正常</hc>"), "帮我确认命名功能是否正常");
     assert.ok(smartFallbackName("A".repeat(200)).length <= MAX_NAME_LENGTH);
     assert.ok(smartFallbackName("长".repeat(100)).length <= MAX_NAME_LENGTH);
     assert.ok(isHighQualityName(smartFallbackName("Refactor database connection retry behavior and improve timeout handling")));
@@ -173,6 +209,29 @@ describe("naming language", () => {
       buildLanguageInstruction([{ role: "user", text: "const title = makeName();" }], "ja"),
       /Japanese/i,
     );
+  });
+
+  it("accumulates language over the whole user history, not just the naming window", () => {
+    // 回归：中文会话里最新的 user 消息是一段英文（如粘贴的英文错误或临时英文提问）时，
+    // 短窗口判定只看得到这条英文消息，把整场中文会话命名为英文标题。
+    // 语言判定必须累计全部 user 历史。
+    const branch = [
+      { type: "message", message: { role: "user", content: "帮我确认自动命名用的是会话模型还是配置里的模型" } },
+      { type: "message", message: { role: "assistant", content: "Let me check the configuration." } },
+      { type: "message", message: { role: "user", content: "那么为什么我们的会话标题还是英文的？帮我检查源码设置" } },
+      { type: "message", message: { role: "assistant", content: "Filler one" } },
+      { type: "message", message: { role: "assistant", content: "Filler two" } },
+      { type: "message", message: { role: "assistant", content: "Filler three" } },
+      { type: "message", message: { role: "assistant", content: "Filler four" } },
+      { type: "message", message: { role: "assistant", content: "Filler five" } },
+      { type: "message", message: { role: "assistant", content: "Filler six" } },
+      { type: "message", message: { role: "user", content: "OK now summarize the results in one line please" } },
+      { type: "message", message: { role: "assistant", content: "Done." } },
+    ];
+    const recent = getRecentNamingDialogue(branch);
+    const allUser = getAllUserDialogue(branch);
+    assert.match(buildLanguageInstruction(recent), /English/);
+    assert.match(buildLanguageInstruction(allUser), /Chinese/);
   });
 });
 

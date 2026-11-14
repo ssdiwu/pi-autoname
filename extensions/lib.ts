@@ -11,10 +11,26 @@ export const MAX_NAME_LENGTH = 30;
 
 /** Names matching this pattern are raw-slice fallbacks (bad) */
 export const RAW_SLICE_RE =
-  /^(?:我|你|他|她|它|请|帮|能|可|可以|能不能|请帮|感觉|突然|我想|我想知道|有没有|是不是|为什么|怎么|如何|What|Can|Could|Please|Help|I want|I need|Is there|Why|How)/;
+  /^(?:我|你|他|她|它|请|帮|能|可|可以|能不能|请帮|帮我|我想|我想知道|有没有|是不是|为什么|怎么|如何|What|Can|Could|Please|Help|I want|I need|Is there|Why|How)/;
 
 /** Sentence-ending punctuation — a real session name should not contain these */
 export const SENTENCE_END_RE = /[。！？!?.…]+\s*$/;
+
+/**
+ * Prompt-instruction fragments a naming model may echo back as the label
+ * (observed in the wild: "Label in Chinese 5-15" — a restatement of the
+ * prompt's own language and length instructions). A session name describes
+ * the task, never the naming instructions, so any match is rejected.
+ */
+export const PROMPT_ECHO_RES: RegExp[] = [
+  /write the label/i,
+  /label in (?:simplified|traditional|english|chinese|japanese|korean)/i,
+  /\bthe label\b/i,
+  /characters? or words/i,
+  /language is determined/i,
+  /user messages only/i,
+  /\blabel\b[^\p{L}\p{N}]*\d+\s*[-–~]\s*\d+/u,
+];
 
 export const MIN_COOLDOWN_MINUTES = 1;
 export const MAX_COOLDOWN_MINUTES = 24 * 60;
@@ -91,7 +107,7 @@ export function detectDominantUserLanguage(parts: DialoguePart[]): NamingLanguag
     .sort((left, right) => scores[right] - scores[left] || (firstSeen.get(left) ?? Infinity) - (firstSeen.get(right) ?? Infinity))[0];
 }
 
-function localeLanguageName(locale: string): string {
+export function localeLanguageName(locale: string): string {
   const primary = locale.trim().replace(/_/g, "-").split("-")[0]?.toLowerCase();
   if (primary === "zh") return "Chinese";
   if (primary === "ja") return "Japanese";
@@ -103,13 +119,13 @@ function localeLanguageName(locale: string): string {
 /** Builds an explicit language requirement for the naming model. */
 export function buildLanguageInstruction(parts: DialoguePart[], fallbackLocale?: string, explicitLanguage = "auto"): string {
   if (explicitLanguage !== "auto") {
-    return `Write the label in ${localeLanguageName(explicitLanguage)} (locale: ${explicitLanguage}). This explicit language setting overrides user-message language detection and the Pi locale.`;
+    return `Write the label in ${localeLanguageName(explicitLanguage)} (locale: ${explicitLanguage}); this overrides message-language detection.`;
   }
   const language = detectDominantUserLanguage(parts);
-  if (language === "Chinese") return "Write the label in Chinese, preserving the Simplified or Traditional script used by the user. This language is determined from user messages only.";
-  if (language) return `Write the label in ${language}. This language is determined from user messages only.`;
-  if (fallbackLocale?.trim()) return `No natural-language user text was detected. Use the language selected in the user's Pi locale: ${localeLanguageName(fallbackLocale)}.`;
-  return "No natural-language user text was detected. Infer the label language from user messages only, never from assistant messages.";
+  if (language === "Chinese") return "Write the label in Chinese, preserving the Simplified or Traditional script the user used.";
+  if (language) return `Write the label in ${language}.`;
+  if (fallbackLocale?.trim()) return `Write the label in ${localeLanguageName(fallbackLocale)} (the user's Pi locale).`;
+  return "Infer the label language from the user's own messages only, never from assistant messages.";
 }
 
 export interface AutonameConfig {
@@ -251,9 +267,29 @@ export function redactSensitiveText(text: string): { text: string; redacted: boo
   return { text: output, redacted };
 }
 
+/**
+ * Deterministic language check for a produced label: its script must match
+ * the language detected from user messages. Models sometimes ignore the
+ * prompt's language instruction (observed: Chinese conversation named
+ * "The task investigating/confirm"); such candidates are rejected so the
+ * chain falls through to the next model or the local user-text fallback.
+ */
+export function matchesNamingLanguage(name: string, language: NamingLanguage | undefined): boolean {
+  if (!language) return true;
+  const han = /[\p{Script=Han}]/u.test(name);
+  const kana = /[\u3040-\u30ff\u31f0-\u31ff]/u.test(name);
+  const hangul = /\p{Script=Hangul}/u.test(name);
+  const latin = /\p{Script=Latin}/u.test(name);
+  if (language === "Chinese") return han && !kana && !hangul;
+  if (language === "Japanese") return kana || (han && !hangul);
+  if (language === "Korean") return hangul && !han;
+  return latin && !han && !kana && !hangul;
+}
+
 export function isHighQualityName(name: string): boolean {
   if (name.length < MIN_NAME_LENGTH || name.length > MAX_NAME_LENGTH) return false;
   if (RAW_SLICE_RE.test(name)) return false;
+  if (PROMPT_ECHO_RES.some((re) => re.test(name))) return false;
   if (SENTENCE_END_RE.test(name)) return false;
   if ((name.match(/[，,。！？!?]/g) || []).length > 1) return false;
   return /[\p{L}\p{N}]/u.test(name);
@@ -270,7 +306,8 @@ export function blockText(content: any): string {
 }
 
 export function smartFallbackName(text: string): string {
-  let s = text.slice(0, 200).replace(/\n/g, " ").trim();
+  // Relay wrappers (e.g. `<hc from="…">…</hc>`) are transport markup, never part of the task.
+  let s = text.slice(0, 200).replace(/^(?:<[^<>\n]{1,80}>\s*)+/, "").replace(/(?:\s*<\/(?:[^<>\n]{1,80})>)+\s*$/, "").replace(/\n/g, " ").trim();
 
   s = s
     .replace(
@@ -298,6 +335,20 @@ export function limitNameLength(text: string): string {
   prefix = prefix.replace(/[\uD800-\uDBFF]$/, "");
   const space = prefix.lastIndexOf(" ");
   return (space > MAX_NAME_LENGTH / 2 ? prefix.slice(0, space) : prefix).trim();
+}
+
+/**
+ * Format-only coercion for an AI candidate: strip wrapping quotes, drop
+ * trailing sentence punctuation, keep the first clause and clamp to the shared
+ * length budget. A verbose but on-topic, on-language first candidate should
+ * survive as a usable label instead of being discarded to fallback.
+ */
+export function coerceCandidateName(text: string): string {
+  let s = text.trim().replace(/^["'`「『"“”']+|["'`」』"“”']+$/g, "").trim();
+  s = s.replace(/[.。．!?！？…]+\s*$/, "").trim();
+  const clauseEnd = s.search(/[,，、;；]/);
+  if (clauseEnd >= MIN_NAME_LENGTH) s = s.slice(0, clauseEnd).trim();
+  return limitNameLength(s);
 }
 
 /** A persisted pi-autoname state marker — one of three flavors. */
@@ -452,6 +503,27 @@ export function getRecentNamingDialogue(branch: any[], options: DialogueOptions 
     if (dialogueCount >= 6 && foundLatestUser) break;
   }
   return items.reverse();
+}
+
+/**
+ * Every user-authored dialogue text in branch order. Language detection
+ * accumulates over the whole user history — long-term input decides the
+ * naming language, not the latest naming window.
+ */
+export function getAllUserDialogue(branch: any[], options: DialogueOptions = {}): DialoguePart[] {
+  const items: DialoguePart[] = [];
+  for (const entry of branch) {
+    if (isIncludedCustomMessage(entry, options)) {
+      const text = blockText(entry.content);
+      if (text) items.push({ role: "user", text });
+      continue;
+    }
+    if (entry?.type !== "message" || !entry.message) continue;
+    if (entry.message.role !== "user") continue;
+    const text = blockText(entry.message.content);
+    if (text) items.push({ role: "user", text });
+  }
+  return items;
 }
 
 /**

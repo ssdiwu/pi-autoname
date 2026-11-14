@@ -95,7 +95,7 @@ Config file is **auto-generated** on first use at `~/.pi/agent/pi-autoname.json`
 
 This tries models in order: `MiniMax-M2.7` → `mimo-v2-omni` → session model.
 
-For example, `"model": "xai/grok-4.6:low"` selects the model with Pi’s unified `reasoning: "low"` option. Supported suffixes are `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; unknown suffixes remain part of the model ID. Authentication, provider routing, cancellation, and the shared 30-second budget still belong to the same host runtime path.
+For example, `"model": "xai/grok-4.6:low"` selects the model with Pi’s unified `reasoning: "low"` option. Supported suffixes are `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`; unknown suffixes remain part of the model ID. Authentication, provider routing, cancellation, and the shared 90-second budget still belong to the same host runtime path.
 
 ### Example: Name worker sessions from injected assignments
 
@@ -144,12 +144,12 @@ name still fits? → keep it
 
 ```
 primary model (from config)
-        ↓ failed within the shared 30-second budget?
+        ↓ failed, timed out (75s per attempt, 90s shared), or empty (one delayed retry)?
 fallback models (from config)
         ↓ failed?
 session model (automatic)
-        ↓ failed?
-smart text extraction (no AI)
+        ↓ failed, or candidate off-language in auto mode?
+smart text extraction from the user's own words (no AI)
 ```
 
 ### Manual naming
@@ -190,7 +190,7 @@ The 10-minute default cooldown is unchanged: later automatic checks happen at se
 
 Set `"language": "zh-CN"` (or another BCP 47 locale) to explicitly choose the language of AI names. Invalid values fall back to `"auto"`. This setting is a model instruction; local fallback extraction cannot translate the user’s text.
 
-With the default `"language": "auto"`, names use the dominant natural language in user messages: the first user message for initial naming, and recent user messages for periodic or manual naming. Assistant responses, paths, URLs, and code snippets do not determine the language. A user message that contains any Han / Kana / Hangul characters is treated as a CJK-language message, so English noise co-injected into the same turn (system warnings, error logs, tool output) cannot outweigh the user's CJK intent; only purely-Latin user messages contribute to the English score. When no natural-language user text is available, pi-autoname optionally uses the active [pi-di18n](https://github.com/ssdiwu/pi-di18n) `/lang` locale; pi-di18n is never required.
+With the default `"language": "auto"`, names use the dominant natural language across all user messages in the session: every user turn accumulates into the score, so the language follows the user's long-term input rather than the latest naming window (a late English message such as a pasted error or a temporary English question cannot flip a mostly-Chinese session to English titles). The first user message still decides a fresh session's initial name before any reply exists, since it is the whole history at that point. As a deterministic gate, an AI candidate whose script does not match the detected language is rejected and the chain tries the next model; the local fallback likewise draws from the latest user turn whose script matches, walking back through earlier turns when the newest one is off-language. Explicit `language` configs are trusted as-is and skip the gate. Assistant responses, paths, URLs, and code snippets do not determine the language. A user message that contains any Han / Kana / Hangul characters is treated as a CJK-language message, so English noise co-injected into the same turn (system warnings, error logs, tool output) cannot outweigh the user's CJK intent; only purely-Latin user messages contribute to the English score. When no natural-language user text is available, pi-autoname optionally uses the active [pi-di18n](https://github.com/ssdiwu/pi-di18n) `/lang` locale; pi-di18n is never required.
 
 ## 🔗 Related
 
@@ -232,7 +232,7 @@ PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-earl
 
 Set `PI_HOST_ROOT` to the actual installed package directory if Pi is managed outside global npm. These checks use offline providers, not live-model or graphical-terminal acceptance tests. See [compatibility evidence and limits](doc/Pi版本兼容性与影响分析.md).
 
-AI replies use the first nonempty text line, or the last nonempty thinking line when no text was returned, and share the same 30-character limit as local fallback labels. The quality gate checks length and basic sentence patterns; it cannot guarantee that a model’s chosen line is semantically useful.
+AI replies use the first nonempty text line, or the last nonempty thinking line when no text was returned, and share the same 30-character limit as local fallback labels. The naming request carries no system prompt (an English system frame primes English labels) and a 2,000-token output budget so reasoning models can finish thinking before emitting the label. Before the quality gate, a candidate is format-coerced: wrapping quotes are stripped, trailing sentence punctuation is dropped, the first clause is kept, and the label is clamped to the shared limit — a verbose but on-topic, on-language first candidate survives instead of being discarded to fallback. The quality gate checks length and basic sentence patterns, and rejects known echoes of the naming prompt's own instructions (observed in the wild: a model restated its language and length instructions as "Label in Chinese 5-15"); it cannot guarantee that a model’s chosen line is semantically useful.
 
 ## Contributors
 

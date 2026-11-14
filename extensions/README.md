@@ -34,14 +34,16 @@ export default function extension(pi: ExtensionAPI): void
 ### lib.ts（命名导出）
 
 纯函数：
-- `detectDominantUserLanguage(parts)` — 仅按用户自然语言消息判定中文、英文、日文或韩文主语言
+- `detectDominantUserLanguage(parts)` — 仅按用户自然语言消息判定中文、英文、日文或韩文主语言；调用方传入的 parts 决定范围，命名提示词传入全历史 user 消息（`getAllUserDialogue`），其他调用点可传窗口内消息
+- `getAllUserDialogue(branch, options)` — 按时间顺序提取全部用户文本（含被选中的 custom message），供语言判定累计使用
 - `buildLanguageInstruction(parts, fallbackLocale, explicitLanguage)` — 生成显式语言提示；显式 language 优先，其次用户语言，无可判定用户语言时才采用可选 locale 兜底
 - `normalizeConfig(input)` — 配置规范化，包括 BCP 47 语言配置（非法值回到 auto）
 - `parseModelRef(modelName)` — 解析 provider/modelId 与六种思考级别后缀，未知后缀保留
 - `limitNameLength(text)` — AI／本地降级共用 30 字符上限，优先保留完整单词，不切断 UTF-16 代理对
 - `getDialogueOptions(includeCustomMessages)` — 按 `includeCustomMessages` 生成 `custom_message` 过滤选项（关闭 / 全部 / `customType` 白名单）
 - `redactSensitiveText(text)` — 敏感信息脱敏
-- `isHighQualityName(name)` — 名称质量检查
+- `isHighQualityName(name)` — 名称质量检查，含提示词指令回显拒绝
+- `matchesNamingLanguage(name, language)` — 标签文字体系与判定语言的一致性检查；命名链中语言不符的 AI 候选作废并走下一候选，本地降级用它回湸更早的匹配轮次
 - `blockText(content)` — 从消息 content 抽纯文本
 - `smartFallbackName(text)` — 降级命名生成
 - `parseRenameMarker(data)` — 解析 `pi-autoname-state` entry 的 marker；初次提前命名的 `provisional: true` 用于 reload 后恢复待完成的收口修订，旧 marker 保持兼容

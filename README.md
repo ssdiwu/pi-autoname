@@ -198,7 +198,7 @@ With the default `"language": "auto"`, names use the dominant natural language a
 
 ## 🗂️ Project docs
 
-- [doc/README](doc/README.md) — documentation index (glossary, implementation notes, compatibility evidence)
+- [doc/README](doc/README.md) — documentation index (glossary, implementation notes, compatibility evidence, historical archive)
 - [AGENTS.md](AGENTS.md) — engineering, privacy and delivery rules for contributors
 - [tests/README](tests/README.md) — test entry points and what each check can prove
 

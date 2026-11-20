@@ -69,7 +69,7 @@ npm test
 - `../tests/pi-autoname.test.ts` — `lib.ts` 纯函数
 - `../tests/extension-lifecycle.test.ts` — `controller.ts` 生命周期、冷却与取消
 - `../tests/extension-integration.test.ts` — `index.ts` 入口、最终请求脱敏、无 Key 调用、降级及恢复
-- `../tests/pi-host-smoke.mjs` — 本机 Pi 加载器、运行时与内存会话的离线检查，运行方法见 `../doc/Pi版本兼容性与影响分析.md`
+- `../tests/pi-host-smoke.mjs` — 本机 Pi 加载器、运行时与内存会话的离线检查，运行方法见 `../doc/references/Pi版本兼容性与影响分析.md`
 - `../tests/title-spinner.test.ts` — title animation, overlapping activity, cancellation and stale callbacks
 - `../tests/pi-tui-smoke.py` — actual offline TUI title output and `/reload`/Escape lifecycle
 - `../tests/pi-early-naming-smoke.mjs` — 真实 AgentSession 与等待型测试工具，验证任务进行中产生初始名称、收口后再修订

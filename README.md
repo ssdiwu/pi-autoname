@@ -230,7 +230,7 @@ An additional real `AgentSession` check verifies that the first title appears wh
 PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-early-naming-smoke.mjs
 ```
 
-Set `PI_HOST_ROOT` to the actual installed package directory if Pi is managed outside global npm. These checks use offline providers, not live-model or graphical-terminal acceptance tests. See [compatibility evidence and limits](doc/Pi版本兼容性与影响分析.md).
+Set `PI_HOST_ROOT` to the actual installed package directory if Pi is managed outside global npm. These checks use offline providers, not live-model or graphical-terminal acceptance tests. See [compatibility evidence and limits](doc/references/Pi版本兼容性与影响分析.md).
 
 AI replies use the first nonempty text line, or the last nonempty thinking line when no text was returned, and share the same 30-character limit as local fallback labels. The naming request carries no system prompt (an English system frame primes English labels) and a 2,000-token output budget so reasoning models can finish thinking before emitting the label. Before the quality gate, a candidate is format-coerced: wrapping quotes are stripped, trailing sentence punctuation is dropped, the first clause is kept, and the label is clamped to the shared limit — a verbose but on-topic, on-language first candidate survives instead of being discarded to fallback. The quality gate checks length and basic sentence patterns, and rejects known echoes of the naming prompt's own instructions (observed in the wild: a model restated its language and length instructions as "Label in Chinese 5-15"); it cannot guarantee that a model’s chosen line is semantically useful.
 

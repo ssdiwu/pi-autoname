@@ -1,6 +1,6 @@
 {
   "name": "pi-autoname",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "AI-powered session naming for Pi with an animated terminal-title progress marker",
   "type": "module",
   "keywords": [
@@ -25,9 +25,11 @@
     "index.ts",
     "extensions/",
     "README.md",
+    "README-zh.md",
     "LICENSE",
     "package.json",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "CHANGELOG-zh.md"
   ],
   "scripts": {
     "test": "node --test tests/*.test.ts",

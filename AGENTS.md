@@ -2,8 +2,8 @@
 
 ## 工作依据
 
-- 默认中文，称呼 507。开工、续办或跨会话时按当前范围读取 [README](README.md)、[doc/README](doc/README.md) 与目标实现和对应测试，不重复灌入全部历史。
-- README 是用户可感知行为、配置与安装的唯一正文；本文只记录长期工程、隐私与交付边界，不复制产品快照，避免与实现漂移。行为现状以实现与验证为准。
+- 默认中文，称呼 507。开工、续办或跨会话时按当前范围读取 [README](README.md)、[README-zh](README-zh.md)、[doc/README](doc/README.md) 与目标实现和对应测试，不重复灌入全部历史。
+- README 是用户可感知行为、配置与安装的唯一正文（英文 `README.md`、中文 `README-zh.md`，顶部互链，内容保持语义同步）；本文只记录长期工程、隐私与交付边界，不复制产品快照，避免与实现漂移。行为现状以实现与验证为准。
 - 本仓库无开发依赖，直接用 Node.js 内置测试运行器；工程入口见 [README 的 Development 节](README.md#development) 与 [tests/README](tests/README.md)。
 - 本次授权范围与阶段结论按当次指令记录，不把历史授权延伸为远端、发布或新范围的许可。
 
@@ -30,6 +30,11 @@
 
 ## 文档与交付
 
-- 触发语义、配置、隐私边界或安装入口变化时，同步 `README.md`、`CHANGELOG.md` 用户可感知条目及本文涉及处；兼容性证据记入 [doc/references/Pi版本兼容性与影响分析](doc/references/Pi版本兼容性与影响分析.md)。为什么：使用者依赖这些入口判断升级后的行为及数据边界。
+- 触发语义、配置、隐私边界或安装入口变化时，同步 `README.md`、`README-zh.md` 及本文涉及处；兼容性证据记入 [doc/references/Pi版本兼容性与影响分析](doc/references/Pi版本兼容性与影响分析.md)。为什么：使用者依赖这些入口判断升级后的行为及数据边界。
+- 公开贡献入口（开发与验证命令、公开接口约束、变更记录流程）写在 README 的 Contributing 节，`doc/README.md` 顶部提供英文贡献者导航；内部中文与历史内容保留。
+- 两份变更日志都在本 GitHub 仓库维护：`CHANGELOG.md` 是英文发布记录，`CHANGELOG-zh.md` 是中文日常记录；两份只写用户可感知事实，不写验证日志、内部过程或纯文档整理。
+- 日常用中文把已完成的用户可感知变化写入 `CHANGELOG-zh.md`；准备发布（release）时按版本把同一版本的用户可感知条目同步进英文 `CHANGELOG.md`，两份都保留该版本记录，并核对版本、日期与 issue 链接。
+- `README.md` 是英文默认版（npm 默认展示），`README-zh.md` 是同包附带的中文版；两份 README 与两份 changelog 都随 npm 包发布。发布前用 `npm pack --dry-run --ignore-scripts --json` 核对清单包含 `README.md`、`README-zh.md`、`CHANGELOG.md`、`CHANGELOG-zh.md`。
+- 内部文件（`doc/`、`AGENTS.md`、`tests/` 等）无需全译，保留中文及历史；对外部贡献者仍生效的约束写在英文 README 贡献入口，并注明出处。
 - 新增概念先在 [doc/术语表](doc/术语表.md) 定名再进正文。为什么：同一概念多种叫法会让文档与实现逐步脱节。
 - 未经 507 明确要求，不执行 commit、push、tag 或 npm publish；已授权的发版逐渠道读回核验。为什么：本地修改、远端交付和发布是不同动作，不能由检查通过推导出操作许可。

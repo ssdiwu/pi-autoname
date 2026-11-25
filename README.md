@@ -14,6 +14,8 @@
   <code>pi install npm:pi-autoname</code>
 </p>
 
+English | [简体中文](./README-zh.md)
+
 ## ✨ What it does
 
 | Scenario | Behavior |
@@ -202,15 +204,26 @@ With the default `"language": "auto"`, names use the dominant natural language a
 - [AGENTS.md](AGENTS.md) — engineering, privacy and delivery rules for contributors
 - [tests/README](tests/README.md) — test entry points and what each check can prove
 
+## Public contract
+
+- **Extension entry** — `index.ts` exports a default `extension(pi: ExtensionAPI)`; `package.json` registers it through `pi.extensions`.
+- **Events used** — `session_start`, `session_info_changed`, `message_end`, `before_agent_start` / `agent_start`, `agent_settled`, `session_shutdown`, plus the `/autoname` command.
+- **Configuration contract** — the fields, types, and defaults of `~/.pi/agent/pi-autoname.json` are listed in the configuration table above; the file is generated only on first use.
+- **Name result constraints** — names are short, stable, and derived from session semantics after cleaning and quality checks. An AI reply contributes its first nonempty text line, or its last nonempty thinking line when no text was returned, and shares the 30-character limit with local fallback labels. Naming requests carry no system prompt (an English system frame primes English labels) and use a 2,000-token output budget.
+- **Data boundary** — session content and titles are never written to logs, sent to unauthorized providers, or persisted as extra prompts. Only redacted recent excerpts reach the model.
+- **Model calls** — naming requests go through Pi's public model interface `ctx.modelRegistry.streamSimple().result()`, so Pi owns authentication, provider routing, and cancellation; the extension hardcodes no provider, model, or key.
+- **Time budget** — 75 seconds per attempt and a shared 90-second total; an empty response is retried once on the same model after a delay.
+- **Named exports** — debug diagnostics expose readability, name/marker presence, marker kind, and parse-error counts only; names, paths, and raw exceptions are not exported for logging.
+
 ## Development
 
-The repository has no development dependency. With Node.js 22.19.0 or later (Node.js 22.22.3 is the current integration baseline), run the built-in TypeScript test runner directly:
+The repository has no development dependency. With Node.js 22.19.0 or later (Node.js 24.16.0 is the current integration baseline), run the built-in TypeScript test runner directly:
 
 ```bash
 npm test
 ```
 
-Pi provides the two declared peer dependencies (`@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent`, both `^1.4.0`) at extension runtime. The current integration baseline is Pi **1.4.0** (Node.js **22.22.3**). Naming calls use `ctx.modelRegistry.streamSimple().result()` so Pi resolves provider authentication, including providers that do not require an API key.
+Pi provides the two declared peer dependencies (`@earendil-works/pi-ai` and `@earendil-works/pi-coding-agent`, both `^1.4.0`) at extension runtime. The current integration baseline is Pi **1.6.0** (Node.js **24.16.0**). Naming calls use `ctx.modelRegistry.streamSimple().result()` so Pi resolves provider authentication, including providers that do not require an API key.
 
 An additional offline check uses the installed Pi loader, runner, session manager, and model runtime with an in-memory test provider:
 
@@ -233,6 +246,15 @@ PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-earl
 Set `PI_HOST_ROOT` to the actual installed package directory if Pi is managed outside global npm. These checks use offline providers, not live-model or graphical-terminal acceptance tests. See [compatibility evidence and limits](doc/references/Pi版本兼容性与影响分析.md).
 
 AI replies use the first nonempty text line, or the last nonempty thinking line when no text was returned, and share the same 30-character limit as local fallback labels. The naming request carries no system prompt (an English system frame primes English labels) and a 2,000-token output budget so reasoning models can finish thinking before emitting the label. Before the quality gate, a candidate is format-coerced: wrapping quotes are stripped, trailing sentence punctuation is dropped, the first clause is kept, and the label is clamped to the shared limit — a verbose but on-topic, on-language first candidate survives instead of being discarded to fallback. The quality gate checks length and basic sentence patterns, and rejects known echoes of the naming prompt's own instructions (observed in the wild: a model restated its language and length instructions as "Label in Chinese 5-15"); it cannot guarantee that a model’s chosen line is semantically useful.
+
+## Contributing
+
+- **Entry points** — `index.ts` and `extensions/` (implementation), `tests/` (unit, lifecycle, and integration tests; see [tests/README](tests/README.md)), `README.md` and `README-zh.md` (user documentation), `AGENTS.md` (engineering, privacy, and delivery rules), `doc/README.md` (documentation index), `doc/术语表.md` (concept names and boundaries).
+- **Local verification** — `npm test`. When trigger timing or the Pi API changes, also run the three offline host/terminal checks above (`pi-host-smoke.mjs`, `pi-early-naming-smoke.mjs`, `pi-tui-smoke.py`). Report the offline host check, real-model tests, and manual terminal operations separately, and state what was not covered.
+- **Documentation sync** — update `README.md` (English) and `README-zh.md` (Chinese) in the same change, keep every technical detail in both, and keep the two pages linked at the top.
+- **Change log** — daily user-perceivable entries are recorded in `CHANGELOG-zh.md` in this repository and mirrored into the English `CHANGELOG.md` when a release is prepared; both changelogs and both READMEs ship in the npm package.
+- **Packaging check** — before publishing, run `npm pack --dry-run --ignore-scripts --json` and confirm the tarball contains `README.md`, `README-zh.md`, `CHANGELOG.md`, and `CHANGELOG-zh.md`.
+- **Boundaries** — names must come from session semantics and pass cleaning and quality checks; session content and titles must not reach logs, unauthorized providers, or extra persisted prompts; model selection, authentication, and requests belong to Pi's public model interface, with no hardcoded provider, model, or key.
 
 ## Contributors
 

@@ -1,38 +1,41 @@
 # Changelog
 
-All notable changes to `pi-autoname` are documented in this file.
+This project follows the basic format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). For tagged releases, use the version from the Git tag. The tagged release is maintained by the release owner in this English `CHANGELOG.md`; daily user-perceivable changes are recorded in the Chinese `CHANGELOG-zh.md` in this repository. Both files contain user-perceivable facts only and ship in the npm package.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+For new releases, use headings in the format `## [x.y.z] - YYYY-MM-DD`. When an entry can be linked unambiguously to a GitHub issue, append `(#xx)`. Historical entries keep their original heading format.
+
+## [0.7.6] - 2026-11-25
+
+- Automatic session naming and `/autoname` support Pi 1.6.0.
 
 ## [0.7.5] - 2026-11-14
 
 ### Fixed
 
-- 命名语言改为累计会话全部 user 消息判定，不再只看本次命名的近期窗口：中文会话里晚出现的英文消息（粘贴报错、临时英文提问）不再把标题翻成英文；新会话首条消息仍是初名的全部历史，行为不变。
-- 质量门拒绝提示词指令回显：修复命名模型把语言与长度指令复述成标题（真实坏例 "Label in Chinese 5-15"），命中时该 AI 候选作废，按原链路降级（下一模型或本地 fallback）。
-- 新增标签语言门：auto 模式下 AI 候选与本地降级名的文字体系均须与用户历史判定的语言一致（真实坏例：中文会话被 group/flash 命名为 "The task investigating/confirm"），不符时该候选作废、试下一模型；降级名在近期证据窗口内回溯更早的匹配轮次，找不到安全合格的匹配时不生成降级名。
-- 命名请求按 Codex（openai/codex）风格重构：指令从十条压缩到三条（约 60 词），新增「Do not answer the request」条款，请求主体改为引用证据本身，语言靠镜像用户输入而非长英文指令墙实现；候选先做格式收敛（去引号、截尾标点含 ASCII 句号、取首从句、限长）再过质量与语言门，提取函数不再内嵌质量判定。
-- 修复两个请求参数导致的系统性失败：移除英文系统提示帧（它使同一中转稳定输出英文标题，curl 裸请求对比证实）；输出预算 64→2000 token（推理模型的思考被 64 预算截断到空正文，此前表现为空候选，并非超时）。修后慢速中转的首个 AI 候选直接以中文标题落地。
-- 空响应在同一模型延时重试一次（等待可被取消），单次尝试与总预算放宽（75s/90s），慢速会话模型的首候选不再被提前放弃；本地降级同样按判定语言筛选取材轮次。
+- Naming language is now determined from all user messages in the cumulative session rather than only the recent window for the current naming pass: late English messages in a Chinese conversation (pasted errors, an occasional English question) no longer flip the title to English; for a new session the first message is still the entire history available for initial naming, so behavior is unchanged.
+- The quality gate rejects prompt-instruction echo: fixed the naming model restating language and length instructions as the title (real bad example: `"Label in Chinese 5-15"`); when detected, that AI candidate is discarded and the existing fallback chain applies (next model or local fallback).
+- Added a title-language gate: in `auto` mode both AI candidates and local fallback names must use the writing system determined from the user's history (real bad example: a Chinese session named `"The task investigating/confirm"` by group/flash); a mismatch discards the candidate and tries the next model; fallback names look further back within the recent evidence window for a matching turn, and no fallback name is generated when no safe, qualifying match is found.
+- Refactored naming requests in the Codex (`openai/codex`) style: instructions reduced from ten to three (about 60 words), added a `Do not answer the request` clause, the request body now quotes the evidence itself, and language is achieved by mirroring the user's input rather than a long wall of English instructions; candidates first undergo format normalization (strip quotes, trim trailing punctuation including the ASCII period, take the first clause, enforce length limits) before the quality and language gates, and the extraction function no longer embeds quality checks.
+- Fixed two request parameters that caused systematic failures: removed the English system-prompt frame (it consistently produced English titles through the same proxy, confirmed by comparing a bare `curl` request); raised the output budget from 64 to 2000 tokens (a reasoning model's thinking was cut off by the 64-token budget, leaving an empty body — previously seen as an empty candidate, not a timeout). After the fix, the first AI candidate through a slow proxy lands directly as a Chinese title.
+- Empty responses are retried once with a delay on the same model (the wait can be cancelled), and per-attempt and total budgets were relaxed (75s/90s), so the first candidate from a slow session model is no longer abandoned early; local fallback likewise selects source turns by the detected language.
 
 ## [0.7.4] - 2026-11-14
 
 ### Changed
 
-- 新增 `doc/GLOSSARY.md` 术语表，统一初名、收口修订、周期改名、marker、提示词线格式等概念的名称与边界；`doc/README.md` 改为编号指路式文档入口。
-- README 新增「Project docs」一节，指向文档索引、Agent 规范与测试入口。
+- Added `doc/GLOSSARY.md` to standardize the names and boundaries of concepts such as initial naming, settlement refinement, periodic renaming, markers, and prompt-line format; `doc/README.md` became a numbered, signpost-style documentation entry point.
+- Added a `Project docs` section to the README, pointing to the documentation index, Agent guidelines, and test entry points.
 
 ## [0.7.3] - 2026-11-14
 
 ### Changed
 
-- 统一代码命名风格：`buildLanguageInstruction`、`MAX_NAME_TOKEN_BUDGET`、枚举值 `"toolResult"`；提示词线格式 `<tool-result>` 保持不变，对模型行为无影响。
-- 重写 `AGENTS.md`（新增命名约定与 0 配置边界），`doc/README.md` 改为文档导航索引，同步 `extensions/README.md` 导出名。
+- Unified code naming style: `buildLanguageInstruction`, `MAX_NAME_TOKEN_BUDGET`, enum value `"toolResult"`; the prompt-line format `<tool-result>` is unchanged and has no effect on model behavior.
+- Rewrote `AGENTS.md` (adding naming conventions and the zero-configuration boundary), turned `doc/README.md` into a documentation navigation index, and synced export names in `extensions/README.md`.
 
 ### Removed
 
-- 移除已过时的 `.doc/` 旧文档（内容已被 `doc/`、`AGENTS.md` 与源码现状取代）；历史可从 Git 追溯。
+- Removed obsolete legacy `.doc/` material (its content has been superseded by `doc/`, `AGENTS.md`, and the current source); history remains available in Git.
 
 ## [0.7.2] - 2026-11-02
 

@@ -1,6 +1,19 @@
 # pi-autoname 文档入口
 
-1. [用户说明与配置](../README.md)
+## English navigation for contributors
+
+| I want to… | Go to |
+|---|---|
+| Install and use the extension | [../README.md](../README.md) (English) · [../README-zh.md](../README-zh.md) (Chinese) |
+| Understand the public contract (events, config, name constraints, data boundary) | [README.md → Public contract](../README.md#public-contract) · [README-zh.md → 公开契约](../README-zh.md#公开契约) |
+| Develop and verify locally | [README.md → Development](../README.md#development) — `npm test` plus the offline host/terminal checks |
+| Contribute a change | [README.md → Contributing](../README.md#contributing) · [README-zh.md → 贡献](../README-zh.md#贡献) |
+| Know the engineering, privacy, and delivery rules | [../AGENTS.md](../AGENTS.md) (Chinese, internal) |
+| Browse the docs | [doc/README.md](./README.md) |
+
+Documentation navigation only — the current behavior is defined by the implementation and the tests.
+
+1. [用户说明与配置（英文）](../README.md) · [中文说明](../README-zh.md)
 2. [Agent 规范](../AGENTS.md)
 3. [术语表](./术语表.md)
 4. [实现说明](../extensions/README.md)
@@ -13,7 +26,7 @@
 
 | 位置 | 内容 |
 |---|---|
-| [`../README.md`](../README.md) | 用户可感知行为、配置字段、安装与开发方式 |
+| [`../README.md`](../README.md)、[`../README-zh.md`](../README-zh.md) | 用户可感知行为、配置字段、安装与开发方式（英文／中文两版） |
 | [`../AGENTS.md`](../AGENTS.md) | 长期工程、隐私与交付边界 |
 | [`../extensions/README.md`](../extensions/README.md) | 实现说明：模块职责、导出与测试对应关系 |
 | [`../tests/README.md`](../tests/README.md) | 各验证入口能证明什么 |
@@ -37,6 +50,6 @@
 
 ## 维护规则
 
-- 概念命名变化 → 更新 `doc/术语表.md`；用户可感知行为变化 → 更新根 `README.md` 与 `CHANGELOG.md`。
+- 概念命名变化 → 更新 `doc/术语表.md`；用户可感知行为变化 → 更新根 `README.md` 与 `README-zh.md`，日常写入本仓 `CHANGELOG-zh.md`，准备发布时按版本同步到英文 `CHANGELOG.md`；两份 changelog 与两版 README 都随 npm 包发布。
 - 兼容性证据 → 追加 `doc/references/Pi版本兼容性与影响分析.md`，不据此改写现行行为表述。
 - 难逆转决定 → 后续如需立档，在 `doc/决策档案/` 下按 `0001-中文标题.md` 一条一文件并同步索引；可复用做法 → `doc/经验笔记.md`。

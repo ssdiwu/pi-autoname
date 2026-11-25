@@ -22,7 +22,7 @@ npm test
 
 测试只使用 Node.js（JavaScript 运行时）内置的 `node:test`（测试 API）；Node.js 22.19.0 及以上可直接执行本目录的 TypeScript（类型脚本）测试。
 
-终端标题功能已在 Pi 1.4.0 验证（此前基线为 1.3.0）。宿主检查单独运行，不计入 `npm test`：
+终端标题功能已在 Pi 1.6.0 验证（此前基线为 1.4.0）。宿主检查单独运行，不计入 `npm test`：
 
 ```bash
 PI_HOST_ROOT="$(npm root -g)/@earendil-works/pi-coding-agent" node tests/pi-host-smoke.mjs
